@@ -28,7 +28,7 @@ Factor Miner 是一套独立 Python 项目，用于把人工或 LLM 生成的金
 安装 [uv](https://docs.astral.sh/uv/) 后执行：
 
 ```bash
-git clone <你的仓库地址> factor_miner
+git clone https://github.com/ValerianHuan62/factor_miner.git
 cd factor_miner
 cp configs/company_a_share.env.example .env
 make install
