@@ -7,6 +7,9 @@ on:
 jobs:
   synthetic-tests:
     runs-on: ubuntu-latest
+    env:
+      NO_COLOR: "1"
+      COLUMNS: "200"
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v7
