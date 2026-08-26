@@ -1,6 +1,7 @@
 """schema 测试使用的稳定构造器。"""
 
 from datetime import date, datetime, timezone
+import re
 
 from factor_miner.schema import (
     AvailabilitySpec,
@@ -26,6 +27,15 @@ from factor_miner.schema import (
     registered_trusted_candidate,
 )
 from factor_miner.policy import company_a_share_visible_policy
+
+
+ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+
+
+def strip_ansi(text: str) -> str:
+    """移除 CLI 测试输出中与终端有关的 ANSI 样式码。"""
+
+    return ANSI_ESCAPE.sub("", text)
 
 
 def valid_candidate() -> CandidateFactorSpec:

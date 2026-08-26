@@ -24,6 +24,7 @@ from factor_miner.research_memory import MemorySnapshotPolicy, ResearchMemorySto
 from factor_miner.canonical import canonical_json_bytes
 from tests.test_research_gap import _publish_graph
 from tests.test_research_memory import ResearchMemoryStoreTest
+from tests.helpers import strip_ansi
 
 
 def _context():
@@ -113,14 +114,16 @@ class ResearchEvolutionCLITest(unittest.TestCase):
     def test_campaign_exposes_strict_evolution_bindings(self) -> None:
         result = self.runner.invoke(app, ["campaign", "run-approved", "--help"])
         self.assertEqual(result.exit_code, 0, result.output)
-        self.assertIn("evolution-context", result.output)
-        self.assertIn("approved-hypotheses", result.output)
+        plain_help = strip_ansi(result.output)
+        self.assertIn("evolution-context", plain_help)
+        self.assertIn("approved-hypotheses", plain_help)
 
     def test_approval_command_requires_all_explicit_inputs(self) -> None:
         result = self.runner.invoke(app, ["evolution", "approve-hypotheses", "--help"])
         self.assertEqual(result.exit_code, 0, result.output)
+        plain_help = strip_ansi(result.output)
         for option in ("context", "draft-batch", "decisions", "output"):
-            self.assertIn(option, result.output)
+            self.assertIn(option, plain_help)
 
     def _approval_inputs(self, directory: Path):
         context = _context()

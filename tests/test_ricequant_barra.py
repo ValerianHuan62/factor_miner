@@ -13,6 +13,7 @@ from typer.testing import CliRunner
 
 from factor_miner.cli import app
 from factor_miner.errors import FactorMinerError
+from tests.helpers import strip_ansi
 
 
 class _FakeRiceQuantProvider:
@@ -321,11 +322,12 @@ class RiceQuantBarraDownloadTests(unittest.TestCase):
         result = CliRunner().invoke(app, ["barra", "fetch-ricequant", "--help"])
 
         self.assertEqual(result.exit_code, 0, result.output)
-        self.assertIn("--env-file", result.output)
-        self.assertIn("--universe-uri", result.output)
-        self.assertIn("--derived-root", result.output)
-        self.assertIn("--start", result.output)
-        self.assertIn("--end", result.output)
+        plain_help = strip_ansi(result.output)
+        self.assertIn("--env-file", plain_help)
+        self.assertIn("--universe-uri", plain_help)
+        self.assertIn("--derived-root", plain_help)
+        self.assertIn("--start", plain_help)
+        self.assertIn("--end", plain_help)
 
     def test_provider_skips_a_batch_with_no_listed_security_data(self) -> None:
         """未来才上市的整批证券返回 None 时，其他有效批次仍应继续。"""

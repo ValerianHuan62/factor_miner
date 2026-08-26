@@ -25,6 +25,7 @@ from factor_miner.regime_research import regime_research_report_payload
 from factor_miner.regime_snapshot import publish_regime_snapshot
 from tests.test_regime_snapshot import input_provenance, research_fixture
 from tests.helpers import (
+    strip_ansi,
     valid_candidate,
     valid_incremental_policy,
     valid_reference_factor_library,
@@ -89,10 +90,11 @@ class CliTest(unittest.TestCase):
         self.assertIn("reevaluate-existing", result.stdout)
         detail = self.runner.invoke(app, ["pilot", "reevaluate-existing", "--help"])
         self.assertEqual(detail.exit_code, 0, detail.output)
-        self.assertIn("--source-run-id", detail.stdout)
-        self.assertIn("--config", detail.stdout)
-        self.assertIn("--artifact-root", detail.stdout)
-        self.assertNotIn("--build-identity", detail.stdout)
+        plain_help = strip_ansi(detail.stdout)
+        self.assertIn("--source-run-id", plain_help)
+        self.assertIn("--config", plain_help)
+        self.assertIn("--artifact-root", plain_help)
+        self.assertNotIn("--build-identity", plain_help)
 
     def test_research_worker_rejects_darwin(self) -> None:
         """Mac 不得进入真实自主研究依赖装配。"""
@@ -212,7 +214,7 @@ class CliTest(unittest.TestCase):
             self.assertIn("REGIME_DOWNSTREAM_MANIFEST_MISMATCH", result.output)
 
     def test_regime_build_rejects_real_mode_on_mac(self) -> None:
-        """真实状态构建必须先经过公司 Linux 运行边界。"""
+        """真实状态构建必须先经过授权 Linux 运行边界。"""
 
         environment = {
             "FM_MODE": "visible",
