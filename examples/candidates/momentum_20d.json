@@ -1,0 +1,44 @@
+{
+  "spec_version": "1",
+  "hypothesis": {
+    "claim": "过去二十个交易日的收盘价变化与下一阶段收益同向。",
+    "mechanism": "信息扩散不充分可能使已经形成的价格趋势在短期内延续。",
+    "expected_sign": "positive",
+    "observable_proxy": "收盘价的二十日差分。",
+    "independent_verification": "使用独立成交量和公告数据检验信息扩散机制。",
+    "competing_explanations": [
+      "行业暴露",
+      "市场风险暴露"
+    ],
+    "baseline_reference": "收盘价二十日动量基准。",
+    "failure_modes": [
+      "价格序列缺失",
+      "流动性不足"
+    ],
+    "falsification_path": "若独立机制检验失败或样本外方向反转，则否定该机制。",
+    "source_refs": [
+      "合成验收假设；不作为真实研究引用。"
+    ],
+    "mechanism_status": "mechanism_unverified"
+  },
+  "expression": {
+    "op": "delta",
+    "args": [
+      {
+        "op": "field",
+        "field": "close"
+      }
+    ],
+    "period": 20
+  },
+  "required_fields": [
+    "close"
+  ],
+  "max_lookback": 20,
+  "availability": "next_open",
+  "created_at": "2026-07-15T09:00:00Z",
+  "provenance": {
+    "author": "人工登记",
+    "source": "synthetic-e2e"
+  }
+}

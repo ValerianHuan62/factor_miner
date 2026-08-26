@@ -1,0 +1,15 @@
+{
+  "library_version": "1",
+  "reference_manifest_id": "company_a_share_reference_v1",
+  "reference_manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "reference_factor_ids": [
+    "reference_momentum_20d"
+  ],
+  "factor_value_column": "raw_factor",
+  "basis_selection": "frozen_full_basis",
+  "point_in_time": true,
+  "created_at": "2026-07-27T00:00:00Z",
+  "provenance": {
+    "说明": "仅用于展示结构；服务器登记前必须替换为真实清单哈希并重新生成政策"
+  }
+}

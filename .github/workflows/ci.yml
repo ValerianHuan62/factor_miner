@@ -1,0 +1,18 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  synthetic-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - name: 安装冻结依赖
+        run: uv sync --frozen --extra dashboard
+      - name: 运行纯合成测试
+        run: uv run python -m unittest discover -s tests

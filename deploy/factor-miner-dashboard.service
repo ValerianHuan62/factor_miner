@@ -1,0 +1,20 @@
+[Unit]
+Description=Factor Miner 中文研究 Dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/factor-miner
+EnvironmentFile=/var/lib/factor-miner/private/postgres.env
+EnvironmentFile=/var/lib/factor-miner/private/postgres-readonly.env
+EnvironmentFile=/var/lib/factor-miner/private/runtime.env
+Environment=PYTHONPATH=/opt/factor-miner/src:/opt/factor-miner
+ExecStartPre=/usr/bin/timeout 120 /bin/sh -c 'until /usr/bin/pg_isready -h 127.0.0.1 -p 5432 >/dev/null 2>&1; do /bin/sleep 2; done'
+ExecStart=/opt/factor-miner/.venv/bin/python -m streamlit run dashboard/app.py --server.headless true --server.address 127.0.0.1 --server.port 8501
+Restart=on-failure
+RestartSec=5
+UMask=0077
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,41 @@
+# Python / editors
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+.DS_Store
+.vscode/
+
+# Secrets and machine-local configuration
+.env
+*.env
+*.local.json
+.pgpass
+
+# Real data, ledgers, research artifacts, and models
+data/
+state/
+artifacts/
+outputs/
+models/
+*.parquet
+*.arrow
+*.feather
+*.csv
+*.npy
+*.npz
+*.pkl
+*.pickle
+*.joblib
+*.pt
+*.pth
+*.onnx
+*.log
+
+# Temporary files
+*.tmp
+*.tmp.*
+.worktrees/

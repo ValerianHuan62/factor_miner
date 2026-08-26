@@ -1,0 +1,43 @@
+{
+  "policy_version": "2",
+  "label_id": "company_a_share_o2o_5d_v1",
+  "label_column": "label_o2o_5d",
+  "label_horizon_sessions": 5,
+  "label_formula_version": "open_t_plus_6_over_open_t_plus_1_v1",
+  "rank_mask_column": "valid_for_factor_rank",
+  "universe": {
+    "universe_id": "company_a_share_all_pit",
+    "version": "state_table_v1",
+    "membership_column": "valid_for_factor_rank",
+    "membership_available_at": "close_t",
+    "point_in_time": true
+  },
+  "availability": {
+    "observation": "close_t",
+    "decision": "after_close_t",
+    "earliest_trade": "open_t_plus_1"
+  },
+  "alpha": 0.05,
+  "hac_method": "ols_hac",
+  "hac_max_lags": 5,
+  "min_valid_dates": 60,
+  "min_names_per_date": 20,
+  "min_median_coverage": 0.8,
+  "min_abs_mean_rank_ic": 0.01,
+  "neutralization": "none",
+  "max_abs_output_correlation": 0.8,
+  "reference_manifest_id": "company_a_share_reference_v1",
+  "reference_factor_ids": [
+    "reference_momentum_20d"
+  ],
+  "reference_factor_library_id": "reflib_340a6c612960026d2aa9bd8c",
+  "orthogonalization": {
+    "method": "cross_sectional_rank_ols",
+    "include_intercept": true,
+    "min_reference_coverage": 0.8,
+    "min_cross_sectional_excess_names": 20,
+    "max_condition_number": 100000000.0,
+    "min_median_residual_variance_ratio": 0.05,
+    "min_abs_mean_residual_rank_ic": 0.01
+  }
+}

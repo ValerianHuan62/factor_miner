@@ -1,0 +1,17 @@
+{
+  "visible_start": "2020-01-21",
+  "visible_end": "2020-05-19",
+  "candidate_ids": [
+    "cand_a599cde670af38eef8622c33"
+  ],
+  "max_hypotheses": 1,
+  "alpha": 0.05,
+  "label_column": "label_o2o_5d",
+  "rank_mask_column": "valid_for_factor_rank",
+  "hac_max_lags": 5,
+  "min_valid_dates": 100,
+  "min_names_per_date": 100,
+  "min_median_coverage": 0.8,
+  "max_abs_output_correlation": 0.8,
+  "reference_factor_columns": []
+}

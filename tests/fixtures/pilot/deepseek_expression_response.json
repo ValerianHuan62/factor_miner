@@ -1,0 +1,49 @@
+{
+  "designs": [
+    {
+      "candidate_slot_id": "pilot_fixed_001",
+      "expression": {
+        "op": "delta",
+        "args": [
+          {"op": "field", "field": "price_close"}
+        ],
+        "period": 20
+      },
+      "required_fields": ["price_close"],
+      "max_lookback": 20
+    },
+    {
+      "candidate_slot_id": "pilot_fixed_002",
+      "expression": {
+        "op": "rolling_mean",
+        "args": [
+          {"op": "field", "field": "volume"}
+        ],
+        "window": 20,
+        "center": false
+      },
+      "required_fields": ["volume"],
+      "max_lookback": 19
+    },
+    {
+      "candidate_slot_id": "pilot_fixed_003",
+      "expression": {
+        "op": "rolling_std",
+        "args": [
+          {"op": "field", "field": "price_close"}
+        ],
+        "window": 20,
+        "center": false
+      },
+      "required_fields": ["price_close"],
+      "max_lookback": 19
+    }
+  ],
+  "lint_diagnostics": [
+    {
+      "code": "mechanism_unverified",
+      "severity": "warning",
+      "message": "表达式与经济机制的对应关系仍需独立验证。"
+    }
+  ]
+}

@@ -1,0 +1,100 @@
+{
+  "version": "pilot-fixed-candidates-v1",
+  "candidates": [
+    {
+      "candidate_id": "pilot_fixed_001",
+      "spec": {
+        "spec_version": "1",
+        "hypothesis": {
+          "claim": "过去二十个交易日的收盘价变化可能反映信息扩散速度差异。",
+          "mechanism": "价格变化可能在短期内包含尚未完全扩散的信息。",
+          "expected_sign": "positive",
+          "observable_proxy": "二十个交易日收盘价变化。",
+          "independent_verification": "使用独立公告与成交量信息检验信息扩散机制。",
+          "competing_explanations": ["行业暴露", "市场风险暴露"],
+          "baseline_reference": "二十个交易日收盘价变化基线。",
+          "failure_modes": ["价格序列缺失", "市场状态变化"],
+          "falsification_path": "若独立机制检验失败或方向不稳定，则否定该机制。",
+          "source_refs": ["docs/superpowers/plans/2026-08-04-factor-miner-pilot-stage-a-fixed-candidates.md"]
+        },
+        "expression": {
+          "op": "delta",
+          "args": [{"op": "field", "field": "close"}],
+          "period": 20
+        },
+        "required_fields": ["close"],
+        "max_lookback": 20,
+        "availability": "next_open",
+        "created_at": "2026-08-04T09:00:00+08:00",
+        "provenance": {
+          "author": "人工冻结",
+          "source": "阶段A固定候选设计"
+        }
+      }
+    },
+    {
+      "candidate_id": "pilot_fixed_002",
+      "spec": {
+        "spec_version": "1",
+        "hypothesis": {
+          "claim": "过去二十个交易日的成交量均值可能反映持续交易关注度。",
+          "mechanism": "持续成交活动可能代理信息关注和交易参与程度。",
+          "expected_sign": "positive",
+          "observable_proxy": "二十个交易日成交量均值。",
+          "independent_verification": "使用独立成交额和换手信息检验交易关注机制。",
+          "competing_explanations": ["规模暴露", "流动性暴露"],
+          "baseline_reference": "二十个交易日成交量均值基线。",
+          "failure_modes": ["成交量口径变化", "交易停牌"],
+          "falsification_path": "若独立流动性检验失败或结果仅由规模解释，则否定该机制。",
+          "source_refs": ["docs/superpowers/plans/2026-08-04-factor-miner-pilot-stage-a-fixed-candidates.md"]
+        },
+        "expression": {
+          "op": "rolling_mean",
+          "args": [{"op": "field", "field": "volume"}],
+          "window": 20,
+          "center": false
+        },
+        "required_fields": ["volume"],
+        "max_lookback": 20,
+        "availability": "next_open",
+        "created_at": "2026-08-04T09:00:00+08:00",
+        "provenance": {
+          "author": "人工冻结",
+          "source": "阶段A固定候选设计"
+        }
+      }
+    },
+    {
+      "candidate_id": "pilot_fixed_003",
+      "spec": {
+        "spec_version": "1",
+        "hypothesis": {
+          "claim": "过去二十个交易日的收盘价波动可能反映不确定性和风险定价。",
+          "mechanism": "价格波动可能代理投资者对信息不确定性的定价。",
+          "expected_sign": "negative",
+          "observable_proxy": "二十个交易日收盘价滚动标准差。",
+          "independent_verification": "使用独立实现波动率和风险暴露检验不确定性机制。",
+          "competing_explanations": ["市场风险暴露", "行业波动暴露"],
+          "baseline_reference": "二十个交易日收盘价滚动标准差基线。",
+          "failure_modes": ["价格跳变", "极端行情"],
+          "falsification_path": "若独立风险检验失败或方向在不同区间反转，则否定该机制。",
+          "source_refs": ["docs/superpowers/plans/2026-08-04-factor-miner-pilot-stage-a-fixed-candidates.md"]
+        },
+        "expression": {
+          "op": "rolling_std",
+          "args": [{"op": "field", "field": "close"}],
+          "window": 20,
+          "center": false
+        },
+        "required_fields": ["close"],
+        "max_lookback": 20,
+        "availability": "next_open",
+        "created_at": "2026-08-04T09:00:00+08:00",
+        "provenance": {
+          "author": "人工冻结",
+          "source": "阶段A固定候选设计"
+        }
+      }
+    }
+  ]
+}

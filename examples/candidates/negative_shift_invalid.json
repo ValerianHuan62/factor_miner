@@ -1,0 +1,42 @@
+{
+  "spec_version": "1",
+  "hypothesis": {
+    "claim": "未来一期收盘价变化与下一阶段收益同向。",
+    "mechanism": "该假设仅用于验证未来信息防线，不构成研究假设。",
+    "expected_sign": "positive",
+    "observable_proxy": "负周期 delay 构造的未来收盘价。",
+    "independent_verification": "不执行；该表达式应在语法检查阶段失败。",
+    "competing_explanations": [
+      "未来信息泄漏"
+    ],
+    "baseline_reference": "不适用的未来信息测试基准。",
+    "failure_modes": [
+      "负周期被错误接受"
+    ],
+    "falsification_path": "若编译器接受该表达式，则未来信息防线失效。",
+    "source_refs": [
+      "合成验收防线测试；不作为真实研究引用。"
+    ],
+    "mechanism_status": "mechanism_unverified"
+  },
+  "expression": {
+    "op": "delay",
+    "args": [
+      {
+        "op": "field",
+        "field": "close"
+      }
+    ],
+    "period": -1
+  },
+  "required_fields": [
+    "close"
+  ],
+  "max_lookback": 0,
+  "availability": "next_open",
+  "created_at": "2026-07-15T09:00:00Z",
+  "provenance": {
+    "author": "人工登记",
+    "source": "synthetic-e2e"
+  }
+}
