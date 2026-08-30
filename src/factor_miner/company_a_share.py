@@ -1,11 +1,9 @@
-"""公司 A 股显式 Parquet URI 数据适配器。"""
+"""跨市场标准 Parquet 面板数据适配器。"""
 
 from __future__ import annotations
 
 from datetime import date, timedelta
 from pathlib import Path
-import os
-
 import polars as pl
 
 from factor_miner.data_source import (
@@ -28,7 +26,10 @@ from factor_miner.schema import EvaluationPolicySpec
 
 
 class CompanyAShareDataSource:
-    """读取公司 A 股三张显式 Parquet 表并执行数据合同校验。"""
+    """读取跨市场标准三表并执行数据合同校验。
+
+    类名为兼容既有调用保留；新代码应使用 ``StandardPanelDataSource``。
+    """
 
     def __init__(self, profile: RuntimeProfile, code_commit: str, config_hash: str) -> None:
         """保存运行配置，不在构造阶段访问任何数据文件。"""
@@ -150,31 +151,19 @@ class CompanyAShareDataSource:
             ) from error
 
     def _validate_paths(self) -> None:
-        """验证显式 URI 存在，并检查真实模式 QuantLake 只读。"""
+        """验证显式 URI 存在；内容身份由发布清单与哈希保护。"""
 
         for name in ("market_uri", "state_uri", "label_uri"):
             path = self._required_uri(name)
             if not path.is_file():
                 raise self._error(FailureCode.FIELD_MISSING, f"{name} 不是可读文件：{path}")
-        quantlake_root = self._profile.quantlake_root
-        if self._profile.mode.value in {"smoke", "visible"}:
-            if quantlake_root is None or not quantlake_root.is_dir():
-                raise self._error(
-                    FailureCode.RUNTIME_BOUNDARY_ERROR,
-                    "真实模式必须配置存在的 QuantLake 根目录",
-                )
-            if os.access(quantlake_root, os.W_OK):
-                raise self._error(
-                    FailureCode.RUNTIME_BOUNDARY_ERROR,
-                    "当前运行用户对 QuantLake 根目录具备写权限",
-                )
 
     def _validate_schema(self, market: pl.DataFrame, state: pl.DataFrame, label: pl.DataFrame) -> None:
         """验证三张表的标准列和基础类型。"""
 
         required = {
-            "行情": set(IDENTITY_COLUMNS + MARKET_COLUMNS),
-            "状态": set(IDENTITY_COLUMNS + STATE_BASE_COLUMNS + MASK_COLUMNS),
+            "行情": set(IDENTITY_COLUMNS + MARKET_COLUMNS[:5]),
+            "状态": set(IDENTITY_COLUMNS + MASK_COLUMNS),
             "标签": set(IDENTITY_COLUMNS + LABEL_COLUMNS),
         }
         tables = {"行情": market, "状态": state, "标签": label}
@@ -190,7 +179,13 @@ class CompanyAShareDataSource:
         if label.schema.get("date") != pl.Date:
             raise self._error(FailureCode.FIELD_MISSING, "标签 date 必须是 Date 类型")
         for name, table in (("状态", state),):
-            for column in STATE_BASE_COLUMNS + MASK_COLUMNS:
+            optional_state = set(STATE_BASE_COLUMNS).intersection(table.columns)
+            if optional_state and optional_state != set(STATE_BASE_COLUMNS):
+                raise self._error(
+                    FailureCode.STATE_COVERAGE_INCOMPLETE,
+                    "A 股扩展状态列必须全部提供或全部省略",
+                )
+            for column in (*optional_state, *MASK_COLUMNS):
                 if table.schema.get(column) != pl.Boolean:
                     raise self._error(
                         FailureCode.STATE_COVERAGE_INCOMPLETE,
@@ -233,7 +228,10 @@ class CompanyAShareDataSource:
                 )
 
     def _validate_masks(self, state: pl.DataFrame) -> None:
-        """按基础状态重新计算并核对三个派生 mask。"""
+        """核对 mask；存在完整 A 股扩展状态时额外重算其语义。"""
+
+        if not set(STATE_BASE_COLUMNS).issubset(state.columns):
+            return
 
         expected = state.with_columns(
             (~(pl.col("is_st") | pl.col("is_newly_listed"))).alias("expected_compute")
@@ -304,7 +302,7 @@ class CompanyAShareDataSource:
 
 
 class CompanyAShareFactorInputSource:
-    """只读取 market/state 的 V0.1 公司 A 股 input 适配器。"""
+    """只读取 market/state 的跨市场标准 input 适配器。"""
 
     def __init__(self, profile: RuntimeProfile, code_commit: str, config_hash: str) -> None:
         """保存配置；构造阶段不访问任何文件。"""
@@ -328,7 +326,6 @@ class CompanyAShareFactorInputSource:
 
         market_path = self._required_existing_uri("market_uri")
         state_path = self._required_existing_uri("state_uri")
-        self._validate_quantlake_read_only()
         market = CompanyAShareDataSource._read_table(market_path, "行情")
         state = CompanyAShareDataSource._read_table(state_path, "状态")
         self._validate_input_schema(market, state)
@@ -445,8 +442,8 @@ class CompanyAShareFactorInputSource:
     def _validate_input_schema(self, market: pl.DataFrame, state: pl.DataFrame) -> None:
         """验证 market/state 标准列、日期和 Boolean mask 类型。"""
 
-        missing_market = set(IDENTITY_COLUMNS + MARKET_COLUMNS) - set(market.columns)
-        missing_state = set(IDENTITY_COLUMNS + STATE_BASE_COLUMNS + MASK_COLUMNS) - set(
+        missing_market = set(IDENTITY_COLUMNS + MARKET_COLUMNS[:5]) - set(market.columns)
+        missing_state = set(IDENTITY_COLUMNS + MASK_COLUMNS) - set(
             state.columns
         )
         if missing_market or missing_state:
@@ -456,29 +453,18 @@ class CompanyAShareFactorInputSource:
             )
         if market.schema.get("date") != pl.Date or state.schema.get("date") != pl.Date:
             raise self._error(FailureCode.FIELD_MISSING, "行情和状态 date 必须是 Date 类型")
-        for column in STATE_BASE_COLUMNS + MASK_COLUMNS:
+        optional_state = set(STATE_BASE_COLUMNS).intersection(state.columns)
+        if optional_state and optional_state != set(STATE_BASE_COLUMNS):
+            raise self._error(
+                FailureCode.STATE_COVERAGE_INCOMPLETE,
+                "A 股扩展状态列必须全部提供或全部省略",
+            )
+        for column in (*optional_state, *MASK_COLUMNS):
             if state.schema.get(column) != pl.Boolean:
                 raise self._error(
                     FailureCode.STATE_COVERAGE_INCOMPLETE,
                     f"状态列 {column} 必须是 Boolean 类型",
                 )
-
-    def _validate_quantlake_read_only(self) -> None:
-        """真实 input 检查保留 QuantLake 只读边界。"""
-
-        if self._profile.mode.value != "visible":
-            return
-        root = self._profile.quantlake_root
-        if root is None or not root.is_dir():
-            raise self._error(
-                FailureCode.RUNTIME_BOUNDARY_ERROR,
-                "真实模式必须配置存在的 QuantLake 根目录",
-            )
-        if os.access(root, os.W_OK):
-            raise self._error(
-                FailureCode.RUNTIME_BOUNDARY_ERROR,
-                "当前运行用户对 QuantLake 根目录具备写权限",
-            )
 
     def _required_existing_uri(self, attribute: str) -> Path:
         """读取并验证一个 input URI 存在。"""
@@ -504,7 +490,7 @@ class CompanyAShareFactorInputSource:
 
 
 class CompanyAShareOutcomeSource:
-    """只读取冻结 label release 的 V0.1 outcome 适配器。"""
+    """只读取冻结 label release 的跨市场 outcome 适配器。"""
 
     def __init__(self, profile: RuntimeProfile, policy: EvaluationPolicySpec) -> None:
         """保存 profile/policy；构造阶段不访问 label。"""
@@ -714,3 +700,9 @@ def _validate_exact_key_set(
             FailureCode.STATE_COVERAGE_INCOMPLETE,
             f"{right_name}键集合与行情不一致：缺失 {missing.height}，多余 {extra.height}",
         )
+
+
+# 兼容旧导入名，同时向新接入方暴露市场无关名称。
+StandardPanelDataSource = CompanyAShareDataSource
+StandardPanelFactorInputSource = CompanyAShareFactorInputSource
+StandardPanelOutcomeSource = CompanyAShareOutcomeSource

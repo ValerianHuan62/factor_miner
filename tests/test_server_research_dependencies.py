@@ -450,10 +450,10 @@ class ServerResearchDependenciesTest(unittest.TestCase):
         )
         return path
 
-    def test_real_worker_rejects_darwin_before_reading_data(self) -> None:
+    def test_real_worker_on_darwin_requires_same_database_config(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = self._config(Path(directory))
-            with self.assertRaisesRegex(ValueError, "Linux"):
+            with self.assertRaisesRegex(ValueError, "PostgreSQL"):
                 load_server_research_config(
                     path,
                     environment={},
@@ -497,7 +497,7 @@ class ServerResearchDependenciesTest(unittest.TestCase):
                     system_name="Linux",
                 )
 
-    def test_missing_or_wrong_minute_root_fails_closed(self) -> None:
+    def test_minute_root_is_optional_and_not_bound_to_a_vendor_name(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             path = self._config(root)
@@ -506,15 +506,21 @@ class ServerResearchDependenciesTest(unittest.TestCase):
             wrong.mkdir()
             payload["minute_aggregate_root"] = str(wrong)
             path.write_text(json.dumps(payload), encoding="utf-8")
-            with self.assertRaisesRegex(ValueError, "equities_final"):
-                load_server_research_config(
-                    path,
-                    environment={
-                        "FM_DASHBOARD_DSN": "postgresql://synthetic",
-                        "DEEPSEEK_API_KEY": "synthetic",
-                    },
-                    system_name="Linux",
-                )
+            environment = {
+                "FM_DASHBOARD_DSN": "postgresql://synthetic",
+                "DEEPSEEK_API_KEY": "synthetic",
+            }
+            config = load_server_research_config(
+                path,
+                environment=environment,
+                system_name="Darwin",
+            )
+            self.assertEqual(config.minute_aggregate_root, wrong)
+
+            payload["minute_aggregate_root"] = str(root / "missing")
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "分钟聚合目录不存在"):
+                load_server_research_config(path, environment=environment)
 
     def test_enabled_barra_sources_require_explicit_policy_path(self) -> None:
         """Worker 启用三类 Barra URI 时必须同时冻结归因政策文件。"""

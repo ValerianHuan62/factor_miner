@@ -25,6 +25,8 @@ models/
 *.arrow
 *.feather
 *.csv
+!examples/data/
+!examples/data/*.csv
 *.npy
 *.npz
 *.pkl

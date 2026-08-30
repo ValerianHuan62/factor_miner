@@ -762,17 +762,12 @@ def run_approved_batch(
     approval_batch: ApprovedEvolutionHypothesisBatch | None = None,
     evolution_context: ResearchEvolutionContext | None = None,
 ) -> ApprovedBatchResult:
-    """在 Linux 上完成表达式、semantic lint、候选登记和槽位终态。
+    """完成表达式、semantic lint、候选登记和槽位终态。
 
     真实因子计算、IC、分组回测和 Barra 归因仍必须等待完整 120 槽
     generation seal；本函数绝不读取 outcome，也不因局部批次完成而打开评价器。
     """
 
-    if platform.system() != "Linux":
-        raise _orchestrator_error(
-            FailureCode.RUNTIME_BOUNDARY_ERROR,
-            "批准批次的真实 LLM 执行只允许在公司 Linux",
-        )
     bundle = prepare_approved_batch_export(
         family_id,
         approved_hypotheses,
@@ -1555,11 +1550,6 @@ def seal_completed_generation(
         family_id,
         seal_input,
     )
-    if platform.system() != "Linux":
-        raise _orchestrator_error(
-            FailureCode.RUNTIME_BOUNDARY_ERROR,
-            "真实 generation seal 只允许在公司 Linux",
-        )
     if dependencies.family.discovery_family_id != family_id:
         raise _orchestrator_error(
             FailureCode.LLM_DATA_IDENTITY_OVERLAP,

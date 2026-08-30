@@ -96,19 +96,18 @@ class CliTest(unittest.TestCase):
         self.assertIn("--artifact-root", plain_help)
         self.assertNotIn("--build-identity", plain_help)
 
-    def test_research_worker_rejects_darwin(self) -> None:
-        """Mac 不得进入真实自主研究依赖装配。"""
+    def test_research_worker_enters_config_validation_on_darwin(self) -> None:
+        """macOS 与 Linux 进入相同的显式配置校验。"""
 
         with tempfile.TemporaryDirectory() as directory:
             config = Path(directory) / "worker.json"
             config.write_text("{}", encoding="utf-8")
-            with patch("factor_miner.server_research_dependencies.platform.system", return_value="Darwin"):
-                result = self.runner.invoke(
-                    app,
-                    ["research", "worker", "--config", str(config), "--once"],
-                )
+            result = self.runner.invoke(
+                app,
+                ["research", "worker", "--config", str(config), "--once"],
+            )
         self.assertNotEqual(result.exit_code, 0)
-        self.assertIn("Linux", result.output)
+        self.assertNotIn("只能在 Linux", result.output)
 
     def test_regime_research_writes_registered_summary_from_input_only_source(
         self,

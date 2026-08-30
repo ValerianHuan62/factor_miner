@@ -1,28 +1,28 @@
 [project]
 name = "factor-miner"
-version = "0.1.0"
-description = "Auditable factor candidate discovery pipeline"
+version = "1.0.0"
+description = "Auditable factor research with typed DSL, coverage graphs, and immutable governance"
+readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
   "h5py>=3.16,<3.17",
   "hmmlearn>=0.3.3,<0.4",
   "polars>=1.41.0,<2",
+  "psycopg[binary]>=3.3.4,<4",
   "pydantic>=2.13.4,<3",
+  "plotly>=6.9.0,<7",
   "pyyaml>=6.0.3,<7",
   "scipy>=1.17,<2",
   "statsmodels>=0.14.6,<0.15",
-  "typer>=0.26.8,<0.27",
-]
-
-[project.optional-dependencies]
-dashboard = [
-  "psycopg[binary]>=3.3.4,<4",
-  "plotly>=6.9.0,<7",
   "streamlit>=1.59.2,<2",
+  "typer>=0.26.8,<0.27",
 ]
 
 [project.scripts]
 factor-miner = "factor_miner.cli:app"
+
+[project.urls]
+Repository = "https://github.com/ValerianHuan62/factor_miner"
 
 [build-system]
 requires = ["setuptools>=75"]

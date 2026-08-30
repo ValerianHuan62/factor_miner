@@ -423,8 +423,8 @@ class CompanyAShareDataSourceTest(unittest.TestCase):
             with self.assertRaisesRegex(FactorMinerError, "DATA_RELEASE_MISMATCH"):
                 source.inspect()
 
-    def test_writable_quantlake_root_is_rejected(self) -> None:
-        """真实模式下 QuantLake 具备写权限时必须拒绝读取。"""
+    def test_writable_local_input_root_is_accepted(self) -> None:
+        """本地用户拥有输入目录权限不应阻止读取。"""
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             quantlake_root = root / "quantlake"
@@ -441,11 +441,7 @@ class CompanyAShareDataSourceTest(unittest.TestCase):
                 code_commit="commit-1",
                 config_hash="config-1",
             )
-            try:
-                with self.assertRaisesRegex(FactorMinerError, "RUNTIME_BOUNDARY_ERROR"):
-                    source.inspect()
-            finally:
-                quantlake_root.chmod(0o755)
+            self.assertEqual(source.inspect().resolved_release_id, "release-test-1")
 
     def _assert_inspect_fails(self, **fixture_options: object) -> None:
         """对 fixture 变体执行统一 inspect 失败断言。"""

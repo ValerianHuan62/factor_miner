@@ -903,6 +903,7 @@ def inspect_pilot_source_identity(paths: PilotSourcePaths) -> PilotInputManifest
         paths.benchmark_manifest_uri, "benchmark"
     )
     return PilotInputManifest(
+        data_origin=paths.data_origin,
         universe=paths.universe,
         quantlake_root=paths.quantlake_root,
         resolved_release_id=release_id,
@@ -1050,6 +1051,7 @@ def inspect_pilot_sources(paths: PilotSourcePaths) -> PilotInputManifest:
     )
     barra = _barra_availability(paths, verify_sources=True)
     return PilotInputManifest(
+        data_origin=paths.data_origin,
         universe=paths.universe,
         quantlake_root=paths.quantlake_root,
         resolved_release_id=release_id,

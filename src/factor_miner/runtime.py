@@ -1,4 +1,4 @@
-"""运行模式、服务器边界和数据 provenance 配置。"""
+"""运行模式、跨平台数据边界和 provenance 配置。"""
 
 from dataclasses import dataclass
 from enum import StrEnum
@@ -258,7 +258,7 @@ def _validate_real_paths(
     smoke_input_root: Path,
     derived_release_root: Path | None,
 ) -> None:
-    """校验真实模式的 QuantLake、artifact 和数据路径边界。
+    """校验真实模式的输入发布与产物路径边界。
 
     参数：
         quantlake_root: QuantLake 根目录。
@@ -269,20 +269,13 @@ def _validate_real_paths(
         无。所有边界通过时正常返回，否则抛出运行时边界错误。
     """
 
-    data_root = Path("/data")
-    if not _is_within(artifact_root, data_root):
-        raise _boundary_error("真实模式的 FM_ARTIFACT_ROOT 必须位于 /data 下")
-
-    repository_roots = _repository_roots()
     required_keys = ("FM_MARKET_URI", "FM_STATE_URI")
     for key in required_keys:
         path = data_paths[key]
         if path is None:
             raise _boundary_error(f"真实模式缺少数据路径：{key}")
-        if not _is_within(path, data_root):
-            raise _boundary_error(f"{key} 必须位于 /data 下")
-        if any(_is_within(path, root) for root in repository_roots):
-            raise _boundary_error(f"{key} 不能指向仓库本地路径")
+        if _is_within(path, artifact_root):
+            raise _boundary_error(f"{key} 不能位于运行产物根目录内")
 
     if mode is ExecutionMode.SMOKE:
         if data_paths["FM_LABEL_URI"] is not None:
@@ -296,37 +289,25 @@ def _validate_real_paths(
                 raise _boundary_error(f"冒烟测试的 {key} 必须位于有界输入根目录")
         return
 
-    expected_quantlake = Path("/data/quantlake")
-    if quantlake_root != expected_quantlake:
-        raise _boundary_error("可见验证的 FM_QUANTLAKE_ROOT 必须精确等于 /data/quantlake")
-    resolved_quantlake = quantlake_root.resolve(strict=False) if quantlake_root else None
-    if resolved_quantlake is None or not _is_within(resolved_quantlake, data_root):
-        raise _boundary_error("/data/quantlake 的软链接目标必须位于 /data 下")
-    if _is_within(artifact_root, expected_quantlake) or _is_within(
-        artifact_root, resolved_quantlake
-    ):
-        raise _boundary_error("FM_ARTIFACT_ROOT 不能位于 QuantLake 内")
     label_path = data_paths["FM_LABEL_URI"]
     if label_path is None:
         raise _boundary_error("可见验证缺少数据路径：FM_LABEL_URI")
-    resolved_derived = (
-        derived_release_root.resolve(strict=False) if derived_release_root else None
-    )
-    if resolved_derived is not None:
-        if not _is_within(resolved_derived, data_root):
-            raise _boundary_error("FM_DERIVED_RELEASE_ROOT 必须位于 /data 下")
-        if _is_within(resolved_derived, resolved_quantlake) or _is_within(
-            resolved_derived, artifact_root
-        ):
-            raise _boundary_error("派生发布根目录必须与 QuantLake 和运行产物根目录分离")
-    allowed_release_root = resolved_derived or resolved_quantlake
     for key in (*required_keys, "FM_LABEL_URI"):
         path = data_paths[key]
         assert path is not None
         if _is_within(path, smoke_input_root):
             raise _boundary_error(f"可见验证的 {key} 不能位于冒烟输入根目录")
-        if not _is_within(path.resolve(strict=False), allowed_release_root):
-            raise _boundary_error(f"可见验证的 {key} 必须位于已声明发布目录")
+        if _is_within(path, artifact_root):
+            raise _boundary_error(f"可见验证的 {key} 不能位于运行产物根目录")
+
+    input_roots = tuple(
+        root.resolve(strict=False)
+        for root in (quantlake_root, derived_release_root)
+        if root is not None
+    )
+    for root in input_roots:
+        if _is_within(artifact_root, root) or _is_within(root, artifact_root):
+            raise _boundary_error("输入发布根目录必须与运行产物根目录分离")
 
 
 def _validate_provenance(environment: Mapping[str, str]) -> None:
@@ -341,8 +322,9 @@ def _validate_provenance(environment: Mapping[str, str]) -> None:
 
     for key in _PROVENANCE_KEYS:
         _read_value(environment, key)
-    if environment["FM_DATA_ORIGIN"].strip() != "server_quantlake":
-        raise _boundary_error("真实模式的 FM_DATA_ORIGIN 必须为 server_quantlake")
+    data_origin = environment["FM_DATA_ORIGIN"].strip()
+    if re.fullmatch(r"[A-Za-z0-9_.-]+", data_origin) is None:
+        raise _boundary_error("FM_DATA_ORIGIN 只能包含字母、数字、点、下划线和连字符")
     _require_sha256(environment["FM_RELEASE_MANIFEST_SHA256"], "FM_RELEASE_MANIFEST_SHA256")
     _require_sha256(_read_value(environment, "FM_CONFIG_HASH"), "FM_CONFIG_HASH")
     code_commit = _read_value(environment, "FM_CODE_COMMIT")
@@ -545,7 +527,7 @@ def load_runtime_profile(
         通过模式、路径和 provenance 校验的不可变 `RuntimeProfile`。
 
     异常：
-        配置缺失、平台不允许或路径越界时抛出 `FactorMinerError`。
+        配置缺失或路径越界时抛出 `FactorMinerError`。
     """
 
     raw_environment = {
@@ -578,10 +560,6 @@ def load_runtime_profile(
     derived_release_root = _optional_path(environment, "FM_DERIVED_RELEASE_ROOT")
 
     if mode in _REAL_MODES:
-        if resolved_platform != "Linux":
-            raise _boundary_error(
-                f"真实模式只能在 Linux 执行，当前平台为 {resolved_platform}"
-            )
         _validate_real_paths(
             mode,
             quantlake_root,
@@ -656,5 +634,3 @@ def assert_real_data_allowed(profile: RuntimeProfile) -> None:
         raise _boundary_error(
             f"运行模式 {profile.mode.value} 不允许访问真实数据"
         )
-    if profile.platform_name != "Linux":
-        raise _boundary_error("真实数据访问必须运行在 Linux")

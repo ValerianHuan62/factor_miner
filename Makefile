@@ -1,7 +1,12 @@
-.PHONY: install test test-fast cli dashboard
+.PHONY: install demo test test-fast cli dashboard
 
 install:
-	uv sync --frozen --extra dashboard
+	uv sync --frozen
+
+demo:
+	uv run factor-miner validate-spec examples/candidates/momentum_20d.json
+	uv run factor-miner compile-spec examples/candidates/momentum_20d.json
+	uv run python -m unittest tests.test_synthetic_e2e -v
 
 test:
 	uv run python -m unittest discover -s tests

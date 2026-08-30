@@ -41,11 +41,10 @@ rqdata_v2trd_sws2021/
 
 ## 抓取命令
 
-以下命令只允许在公司 Linux 服务器执行：
+以下命令只允许在已配置合法米筐凭据和私有数据目录的受控环境执行：
 
 ```bash
-PYTHONPATH=src .venv/bin/python \
-python -m factor_miner.cli barra fetch-ricequant \
+uv run factor-miner barra fetch-ricequant \
   --env-file /data/factor_miner_artifacts/private_config/rqdata.env \
   --universe-uri /data/quantlake/raw/security_flags/daily_security_flags.parquet \
   --derived-root /data/factor_miner_derived/barra/rqdata_v2trd_sws2021 \

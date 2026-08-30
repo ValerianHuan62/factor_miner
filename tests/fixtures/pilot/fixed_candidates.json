@@ -15,7 +15,7 @@
           "baseline_reference": "二十个交易日收盘价变化基线。",
           "failure_modes": ["价格序列缺失", "市场状态变化"],
           "falsification_path": "若独立机制检验失败或方向不稳定，则否定该机制。",
-          "source_refs": ["docs/superpowers/plans/2026-08-04-factor-miner-pilot-stage-a-fixed-candidates.md"]
+          "source_refs": ["docs/contracts/受控研究运行合同.md"]
         },
         "expression": {
           "op": "delta",
@@ -46,7 +46,7 @@
           "baseline_reference": "二十个交易日成交量均值基线。",
           "failure_modes": ["成交量口径变化", "交易停牌"],
           "falsification_path": "若独立流动性检验失败或结果仅由规模解释，则否定该机制。",
-          "source_refs": ["docs/superpowers/plans/2026-08-04-factor-miner-pilot-stage-a-fixed-candidates.md"]
+          "source_refs": ["docs/contracts/受控研究运行合同.md"]
         },
         "expression": {
           "op": "rolling_mean",
@@ -78,7 +78,7 @@
           "baseline_reference": "二十个交易日收盘价滚动标准差基线。",
           "failure_modes": ["价格跳变", "极端行情"],
           "falsification_path": "若独立风险检验失败或方向在不同区间反转，则否定该机制。",
-          "source_refs": ["docs/superpowers/plans/2026-08-04-factor-miner-pilot-stage-a-fixed-candidates.md"]
+          "source_refs": ["docs/contracts/受控研究运行合同.md"]
         },
         "expression": {
           "op": "rolling_std",

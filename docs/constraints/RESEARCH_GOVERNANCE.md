@@ -26,7 +26,7 @@
 
 ## 4. 可见验证
 
-V0 的统计闸门为：
+当前统计闸门为：
 
 1. 按日计算截面 Spearman RankIC。
 2. 使用 campaign 冻结的 HAC max lags 估计均值显著性，报告双侧 raw p 值。
@@ -35,14 +35,14 @@ V0 的统计闸门为：
 
 通过只说明该候选值得进入后续 sealed OOS；不得据此宣称存在可交易 Alpha。
 
-V0.2 在上述原始检验之后增加增量信息闸门。冻结参考库在 outcome 前登记并以内容哈希绑定；候选对完整参考空间做每日截面正交化，残差再执行同口径 RankIC、HAC 和全研究族 Bonferroni。原始通过而残差不通过时，终态必须是 `incremental_failed`，不得降级宣传为 V0.1 通过。
+原始检验之后执行增量信息闸门。冻结参考库在 outcome 前登记并以内容哈希绑定；候选对完整参考空间做每日截面正交化，残差再执行同口径 RankIC、HAC 和全研究族 Bonferroni。原始通过而残差不通过时，终态必须是 `incremental_failed`，不得降级宣传为较低标准下通过。
 
 正交化只回答相对于冻结参考库的线性增量。它不证明机制、非线性独立、密封样本外表现或交易收益。
 
 ## 5. 测试与结果后行为
 
-V0 不访问 sealed test。任何根据 visible 结果进行的修复必须产生新的 candidate ID、parent lineage 和新的 hypothesis slot。结果后解释保存在独立字段，不得覆盖事前假设。
+可见研究不访问 sealed test。任何根据 visible 结果进行的修复必须产生新的 candidate ID、parent lineage 和新的 hypothesis slot。结果后解释保存在独立字段，不得覆盖事前假设。
 
 ## 6. 大语言模型边界
 
-V0 不调用 LLM。未来 LLM 只能提议结构化 Spec；不得修改 compiler、evaluator、统计 family、数据 split 或结果。公司原始数据、个股结果和完整评价不得发送给外部模型。
+LLM 只能在精确请求授权和人工审批下提议结构化 Spec；不得修改 compiler、evaluator、统计 family、数据 split 或结果。公司原始数据、个股结果和完整评价不得发送给外部模型。

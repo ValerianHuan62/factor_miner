@@ -1,4 +1,4 @@
-"""公司 Linux 边界内的受控 DeepSeek 运行器。
+"""跨平台受控 DeepSeek 运行器。
 
 本模块只接收服务器已经准备并批准的精确请求包。它不把 QuantLake 读取结果
 返回给调用方；调用方只能得到运行状态、槽位数量和内容哈希。覆盖图谱的读取、
@@ -187,7 +187,7 @@ def run_server_side_llm_pipeline(
     *,
     transport: DeepSeekTransport | None = None,
 ) -> ServerRunSummary:
-    """在公司 Linux 服务器执行一个已授权的 DeepSeek 请求包。
+    """执行一个已授权的 DeepSeek 请求包。
 
     请求包由固定服务器编排器预先写入：
 
@@ -198,11 +198,6 @@ def run_server_side_llm_pipeline(
     本函数不接受 prompt、原始数据或 API key 参数，也不在返回值中携带模型正文。
     """
 
-    if platform.system() != "Linux":
-        raise _runner_error(
-            FailureCode.RUNTIME_BOUNDARY_ERROR,
-            "真实 DeepSeek 运行只允许在公司 Linux",
-        )
     if not family_id.startswith("llmfamily_"):
         raise _runner_error(
             FailureCode.SPEC_SCHEMA_INVALID,

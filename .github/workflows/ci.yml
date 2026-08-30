@@ -16,6 +16,6 @@ jobs:
         with:
           enable-cache: true
       - name: 安装冻结依赖
-        run: uv sync --frozen --extra dashboard
+        run: uv sync --frozen
       - name: 运行纯合成测试
         run: uv run python -m unittest discover -s tests

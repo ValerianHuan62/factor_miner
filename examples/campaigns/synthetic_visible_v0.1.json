@@ -1,8 +1,0 @@
-{
-  "spec_version": "2",
-  "visible_start": "2020-01-01",
-  "visible_end": "2020-12-31",
-  "candidate_ids": ["cand_1f9fcaa953164d5e7c2d7273"],
-  "evaluation_policy_id": "evalpol_cd9a83fb7dcaece5139e5353",
-  "research_family_id": "family_c6f163c948c393f35e325576"
-}

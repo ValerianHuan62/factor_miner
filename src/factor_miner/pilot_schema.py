@@ -69,11 +69,12 @@ class PilotFixedCandidateFile(BaseModel):
 
 
 class PilotSourcePaths(BaseModel):
-    """服务器侧输入路径及显式沪深全市场身份。"""
+    """受控环境输入路径及显式市场身份。"""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    universe: Literal["SSE_SZSE_WHOLE_MARKET"] = "SSE_SZSE_WHOLE_MARKET"
+    universe: str = Field(default="SSE_SZSE_WHOLE_MARKET", min_length=1)
+    data_origin: str = Field(default="server_quantlake", min_length=1)
     quantlake_root: Path
     release_manifest_uri: Path
     partition_manifest_root: Path | None = None
@@ -174,7 +175,7 @@ class PilotSourcePaths(BaseModel):
 
     @model_validator(mode="after")
     def validate_root_containment(self) -> PilotSourcePaths:
-        """要求各输入位于其显式只读根内，Barra 可缺失但不能越界。"""
+        """要求各输入位于其显式只读发布根内，Barra 可缺失但不能越界。"""
 
         root = self.quantlake_root.resolve(strict=False)
         paths = (
@@ -188,7 +189,7 @@ class PilotSourcePaths(BaseModel):
                 continue
             resolved = path.resolve(strict=False)
             if resolved != root and root not in resolved.parents:
-                raise ValueError(f"输入路径必须位于 QuantLake 根目录内：{path}")
+                raise ValueError(f"输入路径必须位于声明的数据发布根目录内：{path}")
         field_registry_root = (
             self.field_registry_root.resolve(strict=False)
             if self.field_registry_root is not None
@@ -203,7 +204,7 @@ class PilotSourcePaths(BaseModel):
             for item in allowed_field_roots
         ):
             raise ValueError(
-                "field_registry_uri 必须位于 QuantLake 或显式 field_registry_root 内"
+                "field_registry_uri 必须位于数据发布根或显式 field_registry_root 内"
             )
         for path, external_root, name in (
             (
@@ -355,12 +356,12 @@ class BarraAvailability(BaseModel):
 
 
 class PilotInputManifest(BaseModel):
-    """一次 Pilot 所使用的服务器输入身份。"""
+    """一次 Pilot 所使用的跨市场输入身份。"""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    data_origin: Literal["server_quantlake"] = "server_quantlake"
-    universe: Literal["SSE_SZSE_WHOLE_MARKET"] = "SSE_SZSE_WHOLE_MARKET"
+    data_origin: str = Field(default="server_quantlake", min_length=1)
+    universe: str = Field(default="SSE_SZSE_WHOLE_MARKET", min_length=1)
     quantlake_root: Path
     resolved_release_id: str = Field(min_length=1)
     release_manifest_uri: Path

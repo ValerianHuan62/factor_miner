@@ -99,7 +99,7 @@ class FakeResponse:
 class ServerLLMRunnerTest(unittest.TestCase):
     """服务器运行器不得把真实内容带入 Codex 或绕过审批。"""
 
-    def test_real_server_run_is_rejected_on_mac(self) -> None:
+    def test_real_run_on_mac_reaches_authorization_gate(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             _bundle(root, "public_capability_only")
@@ -112,7 +112,7 @@ class ServerLLMRunnerTest(unittest.TestCase):
                     )
         self.assertEqual(
             context.exception.code,
-            FailureCode.RUNTIME_BOUNDARY_ERROR,
+            FailureCode.LLM_EXPORT_NOT_AUTHORIZED,
         )
 
     def test_sanitized_mode_requires_an_approved_policy_bundle(self) -> None:

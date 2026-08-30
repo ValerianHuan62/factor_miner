@@ -68,19 +68,18 @@ class RuntimeBoundaryTest(unittest.TestCase):
         with self.assertRaises(FactorMinerError):
             load_runtime_profile(complete_env(mode="unknown"), platform_name="Linux")
 
-    def test_visible_mode_rejects_darwin(self) -> None:
-        """验证 visible 模式拒绝 Darwin 平台。"""
+    def test_visible_mode_accepts_darwin(self) -> None:
+        """验证 visible 模式不再绑定 Linux。"""
         env = complete_env(mode="visible")
-        with self.assertRaisesRegex(FactorMinerError, "RUNTIME_BOUNDARY_ERROR"):
-            load_runtime_profile(env, platform_name="Darwin")
+        profile = load_runtime_profile(env, platform_name="Darwin")
+        self.assertEqual(profile.platform_name, "Darwin")
 
-    def test_quantlake_must_be_read_only_root(self) -> None:
-        """验证真实模式必须使用精确的 QuantLake 根目录。"""
+    def test_quantlake_is_an_optional_input_root(self) -> None:
+        """验证真实模式可使用任意显式输入发布根目录。"""
         env = complete_env(mode="visible")
         env["FM_QUANTLAKE_ROOT"] = "/Users/example/data"
-        with self.assertRaises(FactorMinerError) as context:
-            load_runtime_profile(env, platform_name="Linux")
-        self.assertEqual(context.exception.code, FailureCode.RUNTIME_BOUNDARY_ERROR)
+        profile = load_runtime_profile(env, platform_name="Darwin")
+        self.assertEqual(profile.quantlake_root, Path("/Users/example/data"))
 
     def test_quantlake_config_path_can_be_a_server_symlink(self) -> None:
         """服务器 QuantLake 软链接必须保留配置路径用于精确边界判断。"""
@@ -300,26 +299,24 @@ class RuntimeBoundaryTest(unittest.TestCase):
         with self.assertRaises(FactorMinerError):
             load_runtime_profile(env, platform_name="Linux")
 
-    def test_repository_local_real_data_path_is_rejected(self) -> None:
-        """验证仓库本地路径不能作为真实数据 URI。"""
+    def test_local_real_data_path_is_accepted(self) -> None:
+        """验证本地显式数据 URI 可进入真实模式。"""
         env = complete_env(mode="visible")
         env["FM_MARKET_URI"] = str(Path.cwd() / "data" / "market.parquet")
-        with self.assertRaises(FactorMinerError):
-            load_runtime_profile(env, platform_name="Linux")
+        self.assertIsNotNone(load_runtime_profile(env, platform_name="Darwin").market_uri)
 
-    def test_data_uri_must_be_under_data_root(self) -> None:
-        """验证真实数据 URI 必须位于 /data 下。"""
+    def test_data_uri_can_use_any_explicit_root(self) -> None:
+        """验证真实数据 URI 不绑定 /data。"""
         env = complete_env(mode="visible")
         env["FM_STATE_URI"] = "/var/lib/factor_miner/state.parquet"
-        with self.assertRaises(FactorMinerError):
-            load_runtime_profile(env, platform_name="Linux")
+        self.assertIsNotNone(load_runtime_profile(env, platform_name="Linux").state_uri)
 
-    def test_artifact_root_must_be_under_data_root(self) -> None:
-        """验证真实 artifact root 必须位于 /data 下。"""
+    def test_artifact_root_can_use_local_temporary_root(self) -> None:
+        """验证真实产物目录不绑定 /data。"""
         env = complete_env(mode="visible")
         env["FM_ARTIFACT_ROOT"] = "/tmp/factor_miner_artifacts"
-        with self.assertRaises(FactorMinerError):
-            load_runtime_profile(env, platform_name="Linux")
+        profile = load_runtime_profile(env, platform_name="Darwin")
+        self.assertEqual(profile.artifact_root, Path("/tmp/factor_miner_artifacts").resolve())
 
     def test_design_mode_allows_temporary_paths_without_real_data(self) -> None:
         """验证 design 模式可以使用临时 artifact 路径且不要求真实数据字段。"""

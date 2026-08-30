@@ -1,102 +1,111 @@
-# Factor Miner：可审计的 LLM 因子研究框架
+# Factor Miner：可审计的因子研究系统
 
-Factor Miner 是一套独立 Python 项目，用于把人工或 LLM 生成的金融假设转换为类型化因子表达式，并在结果揭晓前冻结研究协议，完成因子计算、RankIC/HAC 检验、多重检验、冗余检查、组合诊断、不可变账本和中文 Dashboard 展示。
+Factor Miner 把人工或受控 LLM 提出的金融假设，转换为可审计、可复现的候选因子研究流程。核心链路覆盖因子图谱、假设覆盖分析、研究记忆、自进化候选生成、类型化 DSL、真实数据计算、统计检验、组合诊断、不可变账本和中文 Dashboard。
 
-它不是“让模型自由写 Python”的因子生成器。候选只能使用白名单类型化 AST；行情、标签、统计结果和密钥不会进入 LLM 请求。
+项目不会让模型自由编写 Python，也不会把行情、标签、统计结果或密钥发送给模型。所有输出只能称为“通过当前协议验证的候选因子”，不能直接视为 Alpha、生产结论或实盘建议。
 
-## 项目亮点
+## 核心能力
 
-- 类型化因子 DSL，禁止 `eval`、`exec`、动态导入和任意 Python 表达式。
-- 因子主张、方向、机制、证伪路径和试验预算在读取结果前冻结。
-- RankIC、HAC t 值、Bonferroni、多重检验族和冗余检查均可审计。
-- 120 槽正式研究族、轻量演化、市场状态、覆盖图谱和组合诊断模块。
-- JSON/JSONL 不可变主账本；PostgreSQL 仅作为可重建 Dashboard 读模型。
-- DeepSeek 只接收脱敏公开文本、字段白名单、操作符和 Schema。
-- 完整合成测试不读取真实行情、QuantLake、个人文件或 API Token。
+- **因子图谱**：同时刻画公式结构和实际信号相似性，识别重复簇与研究空白。
+- **假设覆盖图谱**：把覆盖缺口整理为脱敏中文简报，指导模型提出可证伪的新假设。
+- **研究记忆与自进化**：保留成功、失败、拒绝和未执行记录，为下一轮研究提供有边界的上下文。
+- **安全因子 DSL**：只允许白名单类型化 AST，禁止 `eval`、`exec`、动态导入和未来信息。
+- **冻结研究协议**：结果揭晓前固定主张、方向、股票池、标签、预算、HAC 参数和多重检验范围。
+- **可审计评价**：提供 RankIC、HAC t 值、Bonferroni、增量信息、冗余、组合和稳健性诊断。
+- **不可变主存储**：JSON/JSONL 与运行产物保存事实；PostgreSQL 只承载可重建的 Dashboard 读模型。
 
-## 运行环境
+## 快速开始
 
-- Python：3.12
-- 包管理：`uv`
-- 原生开发与合成测试：macOS 或 Linux
-- 真实数据计算：授权的 Linux 研究环境
-- 可选服务：PostgreSQL、Streamlit Dashboard
-- 数据输入：满足 [A 股数据合同](docs/contracts/company-a-share-data.md) 的只读 QuantLake 或等价发布
-
-## 五分钟开始
-
-安装 [uv](https://docs.astral.sh/uv/) 后执行：
+完整系统需要 Python 3.12、`uv`、PostgreSQL 和 Streamlit Dashboard。PostgreSQL 是可重建读模型，JSON/JSONL 与运行产物仍是研究事实源；数据库不可用时不得假装研究已经完整发布。
 
 ```bash
 git clone https://github.com/ValerianHuan62/factor_miner.git
 cd factor_miner
-cp configs/company_a_share.env.example .env
-make install
-make test
-```
-
-本机验证过的命令：
-
-```bash
-uv sync --frozen --extra dashboard
-uv run python -m unittest discover -s tests
-```
-
-2026-08-26 在 Apple Silicon Mac、Python 3.12 上运行 707 项合成测试，全部通过。测试输出中的 Polars sortedness 与 HMM convergence 信息为警告，不影响测试结论。
-
-## 常用命令
-
-```bash
-# 查看 CLI
-uv run factor-miner --help
-
-# 校验与编译示例候选
+uv sync --frozen
+export FM_DASHBOARD_DSN='postgresql://factor_miner:factor_miner_local@127.0.0.1:5432/factor_miner'
 uv run factor-miner validate-spec examples/candidates/momentum_20d.json
 uv run factor-miner compile-spec examples/candidates/momentum_20d.json
-
-# 运行最小合成端到端测试
 uv run python -m unittest tests.test_synthetic_e2e -v
-
-# 启动中文 Dashboard；需要先配置 PostgreSQL 读模型
-make dashboard
 ```
 
-真实研究不会仅凭一个 Token 自动开始。除了 `DEEPSEEK_API_KEY`，还必须显式提供只读数据发布、清单哈希、截止日期、状态表、产物目录、研究配置和 PostgreSQL DSN；缺失时系统按设计硬失败。这样可避免把错误数据或未来信息悄悄当成研究结果。
+以上命令会校验并编译一个合成候选，再运行最小端到端测试。仓库同时提供 `make demo` 快捷命令。查看完整 CLI：
 
-## 目录结构
+```bash
+make cli
+```
+
+常用开发命令：
+
+```bash
+make test                 # 完整合成与合同测试
+make dashboard            # 启动本地 Dashboard，需要 PostgreSQL DSN
+```
+
+如果本机没有 PostgreSQL，可用仓库提供的容器配置启动一个本地实例：
+
+```bash
+docker compose up -d postgres
+```
+
+## 使用门槛
+
+| 能力 | 硬性要求 |
+| --- | --- |
+| 安装与合成测试 | Python 3.12、`uv`；测试不读取真实数据或密钥 |
+| 完整系统 | PostgreSQL DSN、Streamlit Dashboard；依赖已包含在默认安装中 |
+| 受控 LLM 假设生成 | API Key、脱敏请求、精确请求哈希授权和人工审批 |
+| 真实跨市场研究 | 标准面板发布、状态 mask、交易日历、标签、清单哈希、截止日和独立产物目录 |
+
+真实研究可在本地电脑或服务器运行，不要求 SSH、Linux、QuantLake 或个人数据库。A 股、美股和其他市场都通过同一标准面板合同接入；QuantLake 只是可选的 A 股上游。缺少数据身份、字段、状态 mask、配置哈希或截止日一致性时，系统按设计硬失败。
+
+## 接入自己的数据
+
+输入 CSV 或 Parquet 至少包含 `date, asset, open, high, low, close, volume`。若数据已处理交易状态，可额外提供 `valid_for_factor_compute`、`valid_for_factor_rank`、`valid_for_trading` 三个 Boolean mask；否则必须显式确认全部记录可用于演示：
+
+```bash
+uv run factor-miner data prepare-local examples/data/us_equities_sample.csv \
+  --output-root .local/releases/us-sample \
+  --artifact-root .local/artifacts \
+  --adjustment-convention split_adjusted \
+  --calendar-version us-sample-v1 \
+  --assume-tradable
+```
+
+命令会生成标准 Parquet 三表、内容哈希清单和 `runtime.env`。正式研究应由数据适配器提供真实的停牌、退市、可交易状态，而不是使用 `--assume-tradable`。
+
+## 项目结构
 
 ```text
 factor_miner/
-├── src/factor_miner/    # 核心 DSL、计算、评价、LLM、研究编排和账本
-├── dashboard/           # Streamlit 中文研究 Dashboard
-├── configs/             # 无密钥环境变量模板
-├── examples/            # 合成候选、研究族、策略和参考库示例
-├── deploy/              # 通用 Linux systemd 模板
-├── docs/                # 数据合同、治理约束、设计和运行手册
-├── tests/               # 707 项纯合成/合同测试
-├── pyproject.toml       # Python 依赖
+├── src/factor_miner/    # DSL、计算、评价、图谱、LLM 编排、研究记忆与账本
+├── dashboard/           # Streamlit 中文只读 Dashboard 与受控研究台
+├── configs/             # 无密钥配置模板
+├── examples/            # 可公开运行的合成输入
+├── deploy/              # 可选的 Linux systemd 部署模板
+├── docs/                # 研究协议、数据合同和运行手册
+├── tests/               # 纯合成与合同回归测试
+├── ARCHITECTURE.md      # 成品架构与数据流
+├── pyproject.toml       # 包元数据与依赖
 └── uv.lock              # 冻结依赖
 ```
 
-## 研究结论边界
+## 研究边界
 
-系统输出只能称为“通过当前协议验证的候选因子”。可见样本通过不等于密封 OOS 通过，相关性不等于因果机制，统计显著不等于扣除成本后可交易。失败、中断、重复候选和 DSL 错误都保留在原多重检验族中，不会从分母消失。
+- 候选必须在读取结果前冻结金融主张、预期方向、机制、代理、竞争解释、失效方式和证伪路径。
+- 原始因子、预处理、标签、评价和组合构建严格分层；基本面按可得日对齐。
+- 失败、中断、重复和表达式错误仍占用预登记试验名额，不会从多重检验分母中消失。
+- 相关性不等于因果机制，可见区间通过不等于密封样本外通过，统计显著不等于扣除成本后可交易。
+- 真实数据、运行配置、账本、模型、密钥和服务器路径解析结果不得进入 Git。
 
-## 数据与密钥
+## 文档
 
-仓库只保存代码、测试、合同、示例和配置模板。以下内容已由 `.gitignore` 排除：
-
-- `.env`、Token、数据库密码和本机配置
-- Parquet/Arrow/CSV、模型、真实候选和运行账本
-- 研究产物、回测结果、日志和数据库备份
-
-提交 GitHub 前请执行 [发布前检查清单](docs/GITHUB发布前检查清单.md)，并确认你拥有公开代码与文档的权利。仓库目前没有附加开源许可证；公开发布前应根据你的授权范围选择许可证或保持私有。
-
-## 深入阅读
-
-- [从这里开始](docs/START_HERE.md)
-- [研究治理约束](docs/constraints/RESEARCH_GOVERNANCE.md)
+- [系统架构](ARCHITECTURE.md)
 - [因子研究协议](docs/constraints/FACTOR_RESEARCH_PROTOCOL.md)
-- [A 股数据合同](docs/contracts/company-a-share-data.md)
-- [Dashboard 自主研究运行手册](docs/runbooks/Dashboard自主研究运行.md)
-- [本地开发与远程服务器运行](docs/本地开发与远程服务器运行.md)
+- [研究治理](docs/constraints/RESEARCH_GOVERNANCE.md)
+- [标准面板数据合同](docs/contracts/标准面板数据合同.md)
+- [本地与服务器研究运行](docs/runbooks/本地与服务器研究运行.md)
+- [Dashboard 自主研究](docs/runbooks/Dashboard自主研究运行.md)
+
+## 许可证
+
+本项目采用 [MIT License](LICENSE)。

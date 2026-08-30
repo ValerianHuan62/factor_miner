@@ -43,8 +43,8 @@ class DashboardContractTest(unittest.TestCase):
             with self.assertRaises(FactorMinerError):
                 load_server_snapshot()
 
-    def test_dashboard_reads_charts_from_published_files_without_postgres_snapshot(self) -> None:
-        """删除 snapshot_json 后，图表仍必须从正式发布产物读取。"""
+    def test_dashboard_reads_charts_from_files_and_requires_postgres(self) -> None:
+        """图表来自正式产物，同时 PostgreSQL 连接仍是硬要求。"""
 
         run_id = "run_" + "8" * 24
         with tempfile.TemporaryDirectory() as directory:
@@ -64,10 +64,10 @@ class DashboardContractTest(unittest.TestCase):
                 {
                     "FM_ARTIFACT_ROOT": str(root),
                     "FM_DASHBOARD_RUN_ID": run_id,
-                    "FM_DASHBOARD_DSN": "",
+                    "FM_DASHBOARD_DSN": "postgresql://local",
                 },
                 clear=False,
-            ):
+            ), patch("dashboard.read._attach_factor_aliases", side_effect=lambda value, _: value):
                 snapshot = load_server_snapshot()
 
         self.assertEqual(snapshot.run_id, run_id)
@@ -75,6 +75,11 @@ class DashboardContractTest(unittest.TestCase):
             snapshot.portfolio_daily["C"][0]["Q10_Q1_net_return"],
             0.01,
         )
+
+    def test_dashboard_rejects_missing_postgres_dsn(self) -> None:
+        with patch.dict(os.environ, {"FM_DASHBOARD_DSN": ""}, clear=False):
+            with self.assertRaisesRegex(FactorMinerError, "FM_DASHBOARD_DSN"):
+                load_server_snapshot()
 
     def test_dashboard_reuses_parsed_artifacts_and_loads_huan_aliases(self) -> None:
         """同一正式运行只解析一次，并从最小 PG 索引附加 huan 编号。"""
@@ -195,10 +200,10 @@ class DashboardContractTest(unittest.TestCase):
                 {
                     "FM_ARTIFACT_ROOT": str(private_root),
                     "FM_DASHBOARD_RUN_ID": old_run,
-                    "FM_DASHBOARD_DSN": "",
+                    "FM_DASHBOARD_DSN": "postgresql://local",
                 },
                 clear=False,
-            ):
+            ), patch("dashboard.read._attach_factor_aliases", side_effect=lambda value, _: value):
                 snapshot = load_server_snapshot()
 
         self.assertEqual(snapshot.run_id, latest_run)

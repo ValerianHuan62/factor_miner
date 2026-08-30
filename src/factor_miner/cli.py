@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import hashlib
-import fcntl
+try:
+    import fcntl
+except ImportError:  # Windows 使用下方的 msvcrt 文件锁。
+    fcntl = None  # type: ignore[assignment]
 import json
 import os
-import platform
 import time
 from datetime import date, datetime, timedelta, timezone
 from dataclasses import asdict
@@ -18,8 +20,8 @@ from pydantic import ValidationError
 
 from factor_miner.canonical import canonical_json_bytes, sha256_json
 from factor_miner.company_a_share import (
-    CompanyAShareFactorInputSource,
-    CompanyAShareOutcomeSource,
+    StandardPanelFactorInputSource,
+    StandardPanelOutcomeSource,
     ParquetReferenceFactorSource,
 )
 from factor_miner.compiler import CompiledFactorPlan, compile_candidate
@@ -212,17 +214,17 @@ coverage_app = typer.Typer(
 llm_app = typer.Typer(
     add_completion=False,
     no_args_is_help=True,
-    help="登记、封存并核验 V0.5 离线协议；不连接外部模型或结果数据。",
+    help="登记、封存并核验受控离线协议；不连接外部模型或结果数据。",
 )
 pilot_app = typer.Typer(
     add_completion=False,
     no_args_is_help=True,
-    help="执行阶段 A 固定候选本地产物发布和只读 Dashboard 投影。",
+    help="执行受控候选研究、产物发布和只读 Dashboard 投影。",
 )
 campaign_app = typer.Typer(
     add_completion=False,
     no_args_is_help=True,
-    help="执行阶段 C 正式研究族的 120 槽治理、评价和发布。",
+    help="执行正式研究族的 120 槽治理、评价和发布。",
 )
 evolution_app = typer.Typer(
     add_completion=False,
@@ -239,6 +241,16 @@ barra_app = typer.Typer(
     no_args_is_help=True,
     help="下载、规范化并核验服务器侧 Barra 风险模型派生数据。",
 )
+screening_app = typer.Typer(
+    add_completion=False,
+    no_args_is_help=True,
+    help="冻结候选筛选政策并生成方向感知稳健性报告。",
+)
+data_app = typer.Typer(
+    add_completion=False,
+    no_args_is_help=True,
+    help="准备并核验跨市场本地数据发布。",
+)
 app.add_typer(regime_app, name="regime")
 app.add_typer(coverage_app, name="coverage")
 app.add_typer(llm_app, name="llm")
@@ -247,6 +259,47 @@ app.add_typer(campaign_app, name="campaign")
 app.add_typer(evolution_app, name="evolution")
 app.add_typer(research_app, name="research")
 app.add_typer(barra_app, name="barra")
+app.add_typer(screening_app, name="screening")
+app.add_typer(data_app, name="data")
+
+
+@data_app.command("prepare-local")
+def data_prepare_local_command(
+    input_path: Path = typer.Argument(..., help="含标准 OHLCV 列的 CSV 或 Parquet。"),
+    output_root: Path = typer.Option(..., "--output-root", help="新的标准数据发布目录。"),
+    artifact_root: Path = typer.Option(..., "--artifact-root", help="与数据目录分离的运行产物目录。"),
+    adjustment_convention: str = typer.Option(..., "--adjustment-convention"),
+    calendar_version: str = typer.Option(..., "--calendar-version"),
+    data_origin: str = typer.Option("local_files", "--data-origin"),
+    assume_tradable: bool = typer.Option(
+        False,
+        "--assume-tradable",
+        help="仅在输入没有三类有效性 mask 且用户明确确认时使用。",
+    ),
+) -> None:
+    """把本地行情转换为带清单、标签隔离和配置哈希的标准发布。"""
+
+    try:
+        from factor_miner.local_data import prepare_local_release
+
+        release = prepare_local_release(
+            input_path,
+            output_root,
+            artifact_root=artifact_root,
+            adjustment_convention=adjustment_convention,
+            calendar_version=calendar_version,
+            data_origin=data_origin,
+            assume_tradable=assume_tradable,
+        )
+        _print_json({
+            "status": "prepared",
+            "release_id": release.release_id,
+            "release_root": str(release.release_root),
+            "manifest_path": str(release.manifest_path),
+            "config_path": str(release.config_path),
+        })
+    except Exception as error:
+        _fail(error)
 
 
 def _evolution_json(root: Path, names: tuple[str, ...], *, label: str) -> dict[str, Any]:
@@ -837,7 +890,7 @@ def pilot_run_fixed_command(
         "--prepared-run",
         help="服务器侧已完成计算的冻结结果 JSON；本命令只负责合同校验和发布。",
     ),
-    dsn: str | None = typer.Option(None, "--dsn", help="可选 Dashboard PostgreSQL DSN。"),
+    dsn: str = typer.Option(..., "--dsn", envvar="FM_DASHBOARD_DSN", help="Dashboard PostgreSQL DSN。"),
 ) -> None:
     """发布固定候选结果；数据库投影失败不删除本地产物。"""
 
@@ -892,37 +945,36 @@ def pilot_run_fixed_command(
             barra_policy=barra_policy,
             request=request,
         )
-        if dsn:
-            try:
-                from dashboard.pg_store import PostgresDashboardStore
-                from factor_miner.pilot_projection import project_pilot_run
+        try:
+            from dashboard.pg_store import PostgresDashboardStore
+            from factor_miner.pilot_projection import project_pilot_run
 
-                project_pilot_run(
-                    artifact_root,
-                    publication.run_id,
-                    PostgresDashboardStore(dsn),
-                )
-            except Exception as error:
-                _print_json(
-                    {
-                        "status": "published",
-                        "pilot_run_id": publication.run_id,
-                        "manifest_path": str(publication.manifest_path),
-                        "projection_status": "failed",
-                        "projection_error": str(error),
-                        "retry_command": (
-                            f"factor-miner pilot project {publication.run_id} "
-                            f"--artifact-root {artifact_root} --dsn <DSN>"
-                        ),
-                    }
-                )
-                raise typer.Exit(code=1)
+            project_pilot_run(
+                artifact_root,
+                publication.run_id,
+                PostgresDashboardStore(dsn),
+            )
+        except Exception as error:
+            _print_json(
+                {
+                    "status": "published",
+                    "pilot_run_id": publication.run_id,
+                    "manifest_path": str(publication.manifest_path),
+                    "projection_status": "failed",
+                    "projection_error": str(error),
+                    "retry_command": (
+                        f"factor-miner pilot project {publication.run_id} "
+                        f"--artifact-root {artifact_root} --dsn <DSN>"
+                    ),
+                }
+            )
+            raise typer.Exit(code=1)
         _print_json(
             {
                 "status": "published",
                 "pilot_run_id": publication.run_id,
                 "manifest_path": str(publication.manifest_path),
-                "projection_status": "projected" if dsn else "not_requested",
+                "projection_status": "projected",
             }
         )
     except typer.Exit:
@@ -948,16 +1000,11 @@ def pilot_reevaluate_existing_command(
         "--artifact-root",
         envvar="FM_ARTIFACT_ROOT",
     ),
-    dsn: str | None = typer.Option(None, "--dsn", help="可选 Dashboard PostgreSQL DSN。"),
+    dsn: str = typer.Option(..., "--dsn", envvar="FM_DASHBOARD_DSN", help="Dashboard PostgreSQL DSN。"),
 ) -> None:
     """只读复算已发布 Spec，在一个全新运行中执行 long-only 协议。"""
 
     try:
-        if platform.system() != "Linux":
-            raise FactorMinerError(
-                FailureCode.RUNTIME_BOUNDARY_ERROR,
-                "真实因子复算只允许在公司 Linux",
-            )
         from factor_miner.pilot_artifacts import (
             reevaluate_existing_pilot_run,
             resolve_pilot_code_commit,
@@ -978,17 +1025,14 @@ def pilot_reevaluate_existing_command(
             paths=config.paths,
             request=verified_request,
         )
-        projection_status = "not_requested"
-        if dsn:
-            from dashboard.pg_store import PostgresDashboardStore
-            from factor_miner.pilot_projection import project_pilot_run
+        from dashboard.pg_store import PostgresDashboardStore
+        from factor_miner.pilot_projection import project_pilot_run
 
-            project_pilot_run(
-                artifact_root,
-                publication.run_id,
-                PostgresDashboardStore(dsn),
-            )
-            projection_status = "projected"
+        project_pilot_run(
+            artifact_root,
+            publication.run_id,
+            PostgresDashboardStore(dsn),
+        )
         _print_json(
             {
                 "status": "published",
@@ -997,7 +1041,7 @@ def pilot_reevaluate_existing_command(
                 "candidate_source": "published_specs_only",
                 "llm_called": False,
                 "manifest_path": str(publication.manifest_path),
-                "projection_status": projection_status,
+                "projection_status": "projected",
             }
         )
     except Exception as error:
@@ -1148,10 +1192,10 @@ def campaign_evaluate_command(
     family_id: str = typer.Argument(...),
     evaluation_results_path: Path = typer.Argument(
         ...,
-        help="服务器统一 Pilot 评价器输出的按 slot_id 索引 JSON。",
+        help="服务器统一候选评价器输出的按 slot_id 索引 JSON。",
     ),
     artifact_root: Path = typer.Option(..., "--artifact-root"),
-    dsn: str | None = typer.Option(None, "--dsn"),
+    dsn: str = typer.Option(..., "--dsn", envvar="FM_DASHBOARD_DSN"),
 ) -> None:
     """在 seal 后评价全部槽位并发布研究族诊断。"""
 
@@ -1189,34 +1233,32 @@ def campaign_evaluate_command(
             result,
             **binding,
         )
-        projection_status = "not_requested"
-        if dsn:
-            try:
-                from dashboard.pg_store import PostgresDashboardStore
-                from factor_miner.dashboard_projection import project_run_artifacts
+        try:
+            from dashboard.pg_store import PostgresDashboardStore
+            from factor_miner.dashboard_projection import project_run_artifacts
 
-                project_run_artifacts(
-                    artifact_root,
-                    publication.run_id,
-                    PostgresDashboardStore(dsn),
-                )
-                projection_status = "projected"
-            except Exception as error:
-                _print_json(
-                    {
-                        "status": "published",
-                        "run_id": publication.run_id,
-                        "manifest_path": str(publication.manifest_path),
-                        "projection_status": "failed",
-                        "projection_error": str(error),
-                        "retry_command": (
-                            f"factor-miner campaign evaluate {family_id} "
-                            f"{evaluation_results_path} --artifact-root {artifact_root} "
-                            "--dsn <DSN>"
-                        ),
-                    }
-                )
-                raise typer.Exit(code=1)
+            project_run_artifacts(
+                artifact_root,
+                publication.run_id,
+                PostgresDashboardStore(dsn),
+            )
+            projection_status = "projected"
+        except Exception as error:
+            _print_json(
+                {
+                    "status": "published",
+                    "run_id": publication.run_id,
+                    "manifest_path": str(publication.manifest_path),
+                    "projection_status": "failed",
+                    "projection_error": str(error),
+                    "retry_command": (
+                        f"factor-miner campaign evaluate {family_id} "
+                        f"{evaluation_results_path} --artifact-root {artifact_root} "
+                        "--dsn <DSN>"
+                    ),
+                }
+            )
+            raise typer.Exit(code=1)
         _print_json(
             {
                 "status": "published",
@@ -1278,7 +1320,7 @@ def campaign_verify_command(
 
 
 def _load_exact_llm_authorization(path: Path) -> LLMExportAuthorization:
-    """加载阶段 B 使用的精确请求授权，不接受研究族范围授权。"""
+    """加载受控候选流程的精确请求授权，不接受研究族范围授权。"""
 
     payload = _read_json(path)
     if not isinstance(payload, dict):
@@ -1308,7 +1350,7 @@ def _save_stage_state_update(
     stage_run_id: str,
     **values: Any,
 ) -> None:
-    """追加一个阶段 B 状态快照，不覆盖历史状态。"""
+    """追加一个受控候选流程状态快照，不覆盖历史状态。"""
 
     from factor_miner.pilot_llm import (
         PilotStageBState,
@@ -1393,14 +1435,9 @@ def pilot_generate_hypothesis_command(
     record_root: Path = typer.Option(..., "--record-root"),
     output_path: Path = typer.Option(..., "--output"),
 ) -> None:
-    """在公司 Linux 执行脱敏 DeepSeek 假设请求并等待人工批准。"""
+    """执行脱敏 DeepSeek 假设请求并等待人工批准。"""
 
     try:
-        if platform.system() != "Linux":
-            raise FactorMinerError(
-                FailureCode.RUNTIME_BOUNDARY_ERROR,
-                "真实 DeepSeek 假设生成只允许在公司 Linux",
-            )
         from factor_miner.pilot_llm import (
             HypothesisGenerationResponse,
             RecordedDeepSeekHypothesisProvider,
@@ -1560,16 +1597,11 @@ def pilot_run_approved_command(
     pilot_config_path: Path = typer.Argument(...),
     artifact_root: Path = typer.Option(..., "--artifact-root", envvar="FM_ARTIFACT_ROOT"),
     record_root: Path = typer.Option(..., "--record-root"),
-    dsn: str | None = typer.Option(None, "--dsn"),
+    dsn: str = typer.Option(..., "--dsn", envvar="FM_DASHBOARD_DSN"),
 ) -> None:
-    """批准假设后生成三候选、执行阶段 A Pilot 并可选投影 Dashboard。"""
+    """批准假设后生成三候选、执行研究并投影 Dashboard。"""
 
     try:
-        if platform.system() != "Linux":
-            raise FactorMinerError(
-                FailureCode.RUNTIME_BOUNDARY_ERROR,
-                "真实因子计算和 Pilot 只允许在公司 Linux",
-            )
         from factor_miner.pilot_llm import (
             ApprovedPilotRequest,
             PilotHypothesisApproval,
@@ -1617,22 +1649,21 @@ def pilot_run_approved_command(
             hypothesis=approval.hypothesis,
             expression_response=result.expression_response,
         )
-        projection_status = "not_requested"
+        projection_status = "not_started"
         projection_error: str | None = None
-        if dsn:
-            try:
-                from dashboard.pg_store import PostgresDashboardStore
-                from factor_miner.pilot_projection import project_pilot_run
+        try:
+            from dashboard.pg_store import PostgresDashboardStore
+            from factor_miner.pilot_projection import project_pilot_run
 
-                project_pilot_run(
-                    artifact_root,
-                    result.publication.run_id,
-                    PostgresDashboardStore(dsn),
-                )
-                projection_status = "projected"
-            except Exception as error:
-                projection_status = "failed"
-                projection_error = str(error)
+            project_pilot_run(
+                artifact_root,
+                result.publication.run_id,
+                PostgresDashboardStore(dsn),
+            )
+            projection_status = "projected"
+        except Exception as error:
+            projection_status = "failed"
+            projection_error = str(error)
         output = {
             "status": "published",
             "provider_call_id": result.expression_response.provider_call_id,
@@ -1966,11 +1997,6 @@ def llm_provider_call_command(
     """发送一次获准请求；只输出审计元数据，不打印模型正文。"""
 
     try:
-        if platform.system() != "Linux":
-            raise FactorMinerError(
-                FailureCode.RUNTIME_BOUNDARY_ERROR,
-                "真实 DeepSeek 调用只允许在公司 Linux",
-            )
         authorization_payload = _read_json(authorization_path)
         if isinstance(authorization_payload, dict) and "scope_authorization" in authorization_payload:
             authorization_payload = authorization_payload["scope_authorization"]
@@ -2022,7 +2048,7 @@ def llm_server_run_approved_command(
         help="public_capability_only 或 sanitized_coverage_brief。",
     ),
 ) -> None:
-    """在公司 Linux 执行服务器已准备且已授权的 DeepSeek 请求包。"""
+    """执行已准备且已授权的 DeepSeek 请求包。"""
 
     try:
         if mode not in {
@@ -2089,7 +2115,7 @@ def _load_approved_batch_dependencies(
 def _parse_approved_hypotheses(
     payload: object,
 ) -> tuple[RegisteredCoverageGapHypothesis, ...]:
-    """接受批量文件和 V0.5 单候选冻结文件两种形状。"""
+    """接受批量文件和兼容的单候选冻结文件两种形状。"""
 
     if isinstance(payload, dict):
         if "hypotheses" in payload:
@@ -2170,11 +2196,6 @@ def llm_prepare_approved_command(
     """在服务器生成批准批次的精确表达式请求哈希，不访问网络。"""
 
     try:
-        if platform.system() != "Linux":
-            raise FactorMinerError(
-                FailureCode.RUNTIME_BOUNDARY_ERROR,
-                "批准批次准备只允许在公司 Linux",
-            )
         family = LLMDiscoveryLedger(artifact_root).load_family(family_id)
         hypotheses = _parse_approved_hypotheses(_read_json(approved_hypotheses_path))
         payloads = _parse_approved_payloads(
@@ -2221,11 +2242,6 @@ def _run_approved_command(
 ) -> None:
     """执行或恢复批准批次并只输出运行摘要。"""
 
-    if platform.system() != "Linux":
-        raise FactorMinerError(
-            FailureCode.RUNTIME_BOUNDARY_ERROR,
-            "批准批次真实执行只允许在公司 Linux",
-        )
     dependencies, hypotheses = _load_approved_batch_dependencies(
         family_id=family_id,
         artifact_root=artifact_root,
@@ -2307,14 +2323,9 @@ def llm_literature_resolve_command(
     output_request_path: Path = typer.Option(..., "--output-request"),
     literature_root: Path = typer.Option(..., "--literature-root"),
 ) -> None:
-    """在 Linux 通过 Crossref 解析工具调用并生成下一份待授权请求。"""
+    """通过 Crossref 解析工具调用并生成下一份待授权请求。"""
 
     try:
-        if platform.system() != "Linux":
-            raise FactorMinerError(
-                FailureCode.RUNTIME_BOUNDARY_ERROR,
-                "真实文献检索只允许在公司 Linux",
-            )
         root_request = PreparedDeepSeekRequest.model_validate(
             _read_json(root_request_path)
         )
@@ -2603,11 +2614,6 @@ def llm_family_seal_auto_command(
     """从服务器槽对象重算 hash，并在完整 120 槽后登记 seal。"""
 
     try:
-        if platform.system() != "Linux":
-            raise FactorMinerError(
-                FailureCode.RUNTIME_BOUNDARY_ERROR,
-                "真实 generation seal 只允许在公司 Linux",
-            )
         family = LLMDiscoveryLedger(artifact_root).load_family(discovery_family_id)
         dependencies = GenerationSealDependencies(
             artifact_root=artifact_root,
@@ -2640,11 +2646,6 @@ def llm_shadow_run_command(
     """在服务器按固定顺序生成 mechanical 与 grammar shadow arm。"""
 
     try:
-        if platform.system() != "Linux":
-            raise FactorMinerError(
-                FailureCode.RUNTIME_BOUNDARY_ERROR,
-                "真实 shadow 生成只允许在公司 Linux",
-            )
         family = LLMDiscoveryLedger(artifact_root).load_family(discovery_family_id)
         hypotheses = _parse_approved_hypotheses(
             _read_json(approved_coverage_hypotheses_path)
@@ -2905,7 +2906,7 @@ def coverage_build_command(
     regime_snapshot_root: Path = typer.Option(
         ...,
         "--regime-snapshot",
-        help="已经核验的 V0.3 状态快照目录。",
+        help="已经核验的市场状态快照目录。",
     ),
     env_file: Path | None = typer.Option(None, "--env-file"),
 ) -> None:
@@ -2990,19 +2991,20 @@ def doctor(
         if profile.mode.value in {"smoke", "visible"}:
             assert_real_data_allowed(profile)
             identity = verify_runtime_identity(profile)
-            input_source = CompanyAShareFactorInputSource(
+            input_source = StandardPanelFactorInputSource(
                 profile,
                 code_commit=identity.code_commit,
                 config_hash=identity.config_hash,
             )
             input_source.inspect_inputs()
             inputs_checked = True
-            _load_reference_resources(
-                environment, company_a_share_visible_policy(), metadata_only=True
-            )
-            references_checked = True
+            if environment.get("FM_REFERENCE_MANIFEST_PATH", "").strip():
+                _load_reference_resources(
+                    environment, company_a_share_visible_policy(), metadata_only=True
+                )
+                references_checked = True
             if profile.mode is ExecutionMode.VISIBLE:
-                outcome_source = CompanyAShareOutcomeSource(
+                outcome_source = StandardPanelOutcomeSource(
                     profile, company_a_share_visible_policy()
                 )
                 outcome_source.inspect_outcome_metadata()
@@ -3163,7 +3165,7 @@ def register_reference_library_command(
         envvar="FM_ARTIFACT_ROOT",
     ),
 ) -> None:
-    """登记不可变且内容寻址的 V0.2 参考因子库。"""
+    """登记不可变且内容寻址的参考因子库。"""
 
     try:
         payload = _read_json(library_path)
@@ -3344,7 +3346,7 @@ def _run_registered_campaign(
             FailureCode.RUNTIME_BOUNDARY_ERROR,
             f"命令要求 FM_MODE={expected_mode.value}，实际为 {profile.mode.value}",
         )
-    source = CompanyAShareFactorInputSource(
+    source = StandardPanelFactorInputSource(
         profile,
         code_commit=identity.code_commit,
         config_hash=identity.config_hash,
@@ -3355,7 +3357,7 @@ def _run_registered_campaign(
         )
         if reference_source is None:
             raise FactorMinerError(FailureCode.FIELD_MISSING, "可见运行缺少参考因子数据源")
-        outcome_source = CompanyAShareOutcomeSource(profile, policy)
+        outcome_source = StandardPanelOutcomeSource(profile, policy)
         if isinstance(policy, IncrementalEvaluationPolicySpec):
             if reference_library is None:
                 raise FactorMinerError(
@@ -3521,7 +3523,7 @@ def _load_registered_reference_library(
     artifact_root: Path,
     identifier: str,
 ) -> RegisteredReferenceFactorLibrary:
-    """加载并验证内容寻址的 V0.2 参考因子库文档。"""
+    """加载并验证内容寻址的参考因子库文档。"""
 
     paths = LedgerPaths(artifact_root)
     path = paths.reference_libraries_root / f"{identifier}.json"
@@ -3693,7 +3695,7 @@ def research_worker_command(
     config: Path = typer.Option(..., "--config", help="服务器自主研究配置 JSON。"),
     once: bool = typer.Option(False, "--once", help="只处理一个 tick 后退出。"),
 ) -> None:
-    """在公司 Linux 上启动可恢复的单机研究 Worker。"""
+    """在本机启动可恢复的单机研究 Worker。"""
 
     try:
         from factor_miner.research_worker import ResearchWorker, ResearchWorkerConfig
@@ -3708,7 +3710,15 @@ def research_worker_command(
         descriptor = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
         try:
             try:
-                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                if fcntl is None:
+                    import msvcrt
+
+                    if os.path.getsize(lock_path) == 0:
+                        os.write(descriptor, b"0")
+                    os.lseek(descriptor, 0, os.SEEK_SET)
+                    msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)
+                else:
+                    fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError:
                 raise ValueError("已有自主研究 Worker 正在运行") from None
             dependencies = ServerResearchDependencies(server_config)
@@ -3786,6 +3796,86 @@ def research_paired_shadow_command(
                 "error_cn": summary.error_cn,
             }
         )
+    except Exception as error:
+        _fail(error)
+
+
+@screening_app.command("freeze-policy")
+def screening_freeze_policy_command(
+    cutoff_at: str = typer.Option(..., "--cutoff-at", help="带时区的筛选截止时点。"),
+    output: Path = typer.Option(..., "--output", help="不可变筛选政策 JSON。"),
+    target_min: int = typer.Option(20, "--target-min", min=1),
+    target_max: int = typer.Option(30, "--target-max", min=1),
+    policy_version: str = typer.Option(
+        "candidate-screening-v2",
+        "--policy-version",
+        help="v2 使用冻结极端组差净收益去重；v1 仅用于历史主动收益报告。",
+    ),
+) -> None:
+    """在读取逐候选结果前冻结筛选规则和目标数量。"""
+
+    try:
+        from factor_miner.candidate_screening import CandidateScreeningPolicy
+
+        parsed = datetime.fromisoformat(cutoff_at.replace("Z", "+00:00"))
+        if policy_version not in {"candidate-screening-v1", "candidate-screening-v2"}:
+            raise ValueError("筛选政策版本必须是 candidate-screening-v1 或 candidate-screening-v2")
+        policy = CandidateScreeningPolicy(
+            version=policy_version,
+            correlation_series=(
+                "extreme_spread_net_return"
+                if policy_version == "candidate-screening-v2"
+                else "target_long_active_return"
+            ),
+            cutoff_at=parsed,
+            target_min=target_min,
+            target_max=target_max,
+        )
+        _atomic_write_immutable(
+            output,
+            canonical_json_bytes(policy.model_dump(mode="json")),
+        )
+        _print_json(
+            {
+                "status": "筛选政策已冻结",
+                "policy_sha256": policy.policy_sha256,
+                "cutoff_at": policy.cutoff_at.isoformat(),
+                "target_min": policy.target_min,
+                "target_max": policy.target_max,
+                "output": str(output),
+            }
+        )
+    except Exception as error:
+        _fail(error)
+
+
+@screening_app.command("build")
+def screening_build_command(
+    artifact_root: Path = typer.Option(..., "--artifact-root", help="正式不可变产物根目录。"),
+    candidate_map: Path = typer.Option(..., "--candidate-map", help="稳定 huanNNN 映射 CSV。"),
+    policy: Path = typer.Option(..., "--policy", help="已冻结筛选政策 JSON。"),
+    output_root: Path = typer.Option(..., "--output-root", help="筛选报告独立发布根目录。"),
+    regime_snapshot_root: Path | None = typer.Option(
+        None,
+        "--regime-snapshot-root",
+        help="可选的已核验市场状态快照；覆盖不足时只作描述。",
+    ),
+) -> None:
+    """从全部已发布候选运行构建筛选与稳健性报告。"""
+
+    try:
+        from factor_miner.candidate_screening_artifacts import (
+            build_and_publish_screening_report,
+        )
+
+        publication = build_and_publish_screening_report(
+            artifact_root=artifact_root,
+            candidate_map_path=candidate_map,
+            policy_path=policy,
+            output_root=output_root,
+            regime_snapshot_root=regime_snapshot_root,
+        )
+        _print_json(publication.model_dump(mode="json"))
     except Exception as error:
         _fail(error)
 

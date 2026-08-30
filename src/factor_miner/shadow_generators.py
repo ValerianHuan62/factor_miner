@@ -408,8 +408,6 @@ def generate_shadow_arms(
         approval_batch=approval_batch,
         evolution_context=evolution_context,
     )
-    if platform_system() != "Linux":
-        raise _shadow_error(FailureCode.RUNTIME_BOUNDARY_ERROR, "真实 shadow 生成只允许在公司 Linux")
     now = now or datetime.now(timezone.utc)
     summary_path = (
         artifact_root

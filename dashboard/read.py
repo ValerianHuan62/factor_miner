@@ -95,6 +95,12 @@ def _attach_factor_aliases(snapshot: DashboardSnapshot, dsn: str) -> DashboardSn
 def load_server_snapshot() -> DashboardSnapshot:
     """从正式文件读取图表，并从 PostgreSQL 附加稳定业务编号。"""
 
+    dsn = os.environ.get("FM_DASHBOARD_DSN", "").strip()
+    if not dsn:
+        raise FactorMinerError(
+            FailureCode.RUNTIME_BOUNDARY_ERROR,
+            "完整 Dashboard 必须配置 FM_DASHBOARD_DSN",
+        )
     configured_root = os.environ.get("FM_ARTIFACT_ROOT", "")
     configured_run_id = os.environ.get("FM_DASHBOARD_RUN_ID", "")
     if not configured_root:
@@ -110,9 +116,6 @@ def load_server_snapshot() -> DashboardSnapshot:
             "没有已投影运行，且未配置 FM_DASHBOARD_RUN_ID",
         )
     snapshot = _load_artifact_snapshot(str(artifact_root), run_id)
-    dsn = os.environ.get("FM_DASHBOARD_DSN", "").strip()
-    if not dsn:
-        return snapshot
     return _attach_factor_aliases(snapshot, dsn)
 
 
@@ -172,7 +175,10 @@ def load_server_barra_snapshot() -> DashboardSnapshot:
     fallback = _load_artifact_snapshot(configured_root, fallback_run_id)
     dsn = os.environ.get("FM_DASHBOARD_DSN", "").strip()
     if not dsn:
-        return fallback
+        raise FactorMinerError(
+            FailureCode.RUNTIME_BOUNDARY_ERROR,
+            "完整 Dashboard 必须配置 FM_DASHBOARD_DSN",
+        )
     return _attach_factor_aliases(fallback, dsn)
 
 

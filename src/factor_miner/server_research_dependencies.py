@@ -1,4 +1,4 @@
-"""公司 Linux 上自主研究 Worker 的显式依赖装配。"""
+"""跨平台自主研究 Worker 的显式依赖装配。"""
 
 from __future__ import annotations
 
@@ -7,7 +7,6 @@ from datetime import datetime, timedelta, timezone
 import json
 import os
 from pathlib import Path
-import platform
 from typing import Literal, Mapping
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -354,7 +353,7 @@ class ServerResearchConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     artifact_root: Path
-    minute_aggregate_root: Path
+    minute_aggregate_root: Path | None = None
     field_registry_path: Path
     evolution_context_path: Path
     gap_brief_path: Path
@@ -426,10 +425,7 @@ def load_server_research_config(
     environment: Mapping[str, str] | None = None,
     system_name: str | None = None,
 ) -> ServerResearchConfig:
-    """在接触真实数据前核验 Linux、路径、环境和全部 Schema。"""
-
-    if (system_name or platform.system()) != "Linux":
-        raise ValueError("真实自主研究 Worker 只允许在公司 Linux 服务器运行")
+    """在接触真实数据前核验路径、环境和全部 Schema。"""
     config = ServerResearchConfig.model_validate(
         json.loads(path.read_text(encoding="utf-8"))
     )
@@ -444,10 +440,8 @@ def load_server_research_config(
     )
     if not config.artifact_root.is_dir():
         raise ValueError("自主研究产物根目录不存在")
-    if not config.minute_aggregate_root.is_dir():
-        raise ValueError("冻结分钟聚合目录不存在")
-    if config.minute_aggregate_root.name != "equities_final_2005_20260630":
-        raise ValueError("分钟输入必须固定为 equities_final_2005_20260630")
+    if config.minute_aggregate_root is not None and not config.minute_aggregate_root.is_dir():
+        raise ValueError("显式配置的分钟聚合目录不存在")
     if any(item is not None and not item.is_file() for item in required_files):
         raise ValueError("字段注册、上下文、政策或授权配置缺失")
     if config.provider_mode == "live":

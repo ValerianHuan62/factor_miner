@@ -46,7 +46,7 @@ def main() -> None:
         st,
         kicker="FACTOR MINER / READ-ONLY RESEARCH COCKPIT",
         title="从候选信号，到可信可见验证",
-        copy="这里展示的是已发布 Pilot 的研究结果：先看方向、稳定性与组合曲线，再到审计页核对不可变产物。相关性不是因果，开发区间的通过也不是生产结论。",
+        copy="这里展示的是已发布研究批次：先看方向、稳定性与组合曲线，再到审计页核对不可变产物。相关性不是因果，开发区间的通过也不是生产结论。",
         meta=f"运行 {snapshot.run_id}  ·  {len(ids)} 个候选  ·  图表来自正式发布产物",
     )
 
