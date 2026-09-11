@@ -16,6 +16,10 @@ class DslLimits:
     max_nodes: int = 15
     max_depth: int = 5
     max_lookback: int = 130
+    calendar_month_periods: tuple[int, ...] = ()
+
+
+CALENDAR_MONTH_LIMITS = DslLimits(calendar_month_periods=(1, 6, 7, 18))
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,17 +59,31 @@ class _NodeAnalysis:
     canonical: dict[str, Any]
 
 
-_BINARY_OPERATORS = frozenset({"add", "sub", "mul", "div"})
-_UNARY_OPERATORS = frozenset({"neg", "abs"})
-_TEMPORAL_OPERATORS = frozenset({"delay", "delta"})
+_BINARY_OPERATORS = frozenset({"add", "sub", "mul", "div", "gt"})
+_UNARY_OPERATORS = frozenset({"neg", "abs", "sign"})
+_TEMPORAL_OPERATORS = frozenset({"delay", "delta", "calendar_delay", "calendar_delta", "calendar_month_delay"})
 _ROLLING_OPERATORS = frozenset(
     {
         "rolling_sum",
         "rolling_mean",
+        "rolling_lower_tail_mean",
+        "rolling_lower_tail_overlap",
+        "rolling_negative_semibeta",
+        "rolling_salience_value",
         "rolling_std",
+        "rolling_residual_std",
+        "rolling_residual_last",
+        "rolling_explained_increment",
+        "rolling_skew",
         "rolling_min",
         "rolling_max",
+        "rolling_argmax",
+        "rolling_drawdown_recovery",
+        "rolling_time_corr",
         "rolling_corr",
+        "rolling_cov",
+        "rolling_partial_corr",
+        "rolling_partial_beta",
     }
 )
 _OPERATORS = (
@@ -73,6 +91,7 @@ _OPERATORS = (
     | _UNARY_OPERATORS
     | _TEMPORAL_OPERATORS
     | _ROLLING_OPERATORS
+    | frozenset({"hlc_spread"})
 )
 _TEMPORAL_PARAMETER_KEYS = frozenset({"period", "window"})
 
@@ -297,13 +316,21 @@ def _analyse_node(
     _validate_parameter_shape(node, op)
 
     expected_arity = 2 if op in _BINARY_OPERATORS else 1
-    if op == "rolling_corr":
+    if op == "hlc_spread":
+        expected_arity = 5
+    elif op in {"rolling_corr", "rolling_cov", "rolling_residual_std", "rolling_residual_last", "rolling_lower_tail_overlap", "rolling_negative_semibeta", "rolling_salience_value"}:
         expected_arity = 2
-    if len(node.args) != expected_arity:
+    elif op in {"rolling_partial_corr", "rolling_partial_beta"}:
+        expected_arity = 3
+    allowed_arities = ((3, 4, 5, 6) if op == "rolling_explained_increment" else
+                       (3, 4) if op == "rolling_partial_beta" else (expected_arity,))
+    if len(node.args) not in allowed_arities:
         _dsl_error(
             FailureCode.DSL_TYPE_ERROR,
-            f"算子 {op} 需要 {expected_arity} 个参数，实际为 {len(node.args)} 个",
+            f"算子 {op} 需要 {allowed_arities} 个参数，实际为 {len(node.args)} 个",
         )
+    if op in {"calendar_delay", "calendar_delta", "calendar_month_delay"} and node.args[0].op != "field":
+        _dsl_error(FailureCode.DSL_TYPE_ERROR, f"{op} 当前只支持原始字段，不接受嵌套计算")
 
     children = [
         _analyse_node(child, allowed_fields, forbidden_fields, limits)
@@ -314,7 +341,16 @@ def _analyse_node(
     depth = 1 + max(child.depth for child in children)
     lookback = max(child.lookback for child in children)
 
-    if op in _TEMPORAL_OPERATORS:
+    child_has_month = any("calendar_month_delay" in c.operator_signature for c in children)
+    if child_has_month and op in (_TEMPORAL_OPERATORS | _ROLLING_OPERATORS):
+        _dsl_error(FailureCode.DSL_TYPE_ERROR, "日历月观察不得再嵌套时序算子")
+    if op == "calendar_month_delay":
+        period = _temporal_period(node, op)
+        if period not in limits.calendar_month_periods:
+            _dsl_error(FailureCode.DSL_TYPE_ERROR, "日历月观察需要显式协议及允许的月份偏移")
+        # 用自然日上界保守表示所需市场观察跨度，绝不用于实际端点定位。
+        lookback = 31 * period
+    elif op in _TEMPORAL_OPERATORS:
         lookback += _temporal_period(node, op)
     elif op in _ROLLING_OPERATORS:
         if node.period is not None:
@@ -331,7 +367,8 @@ def _analyse_node(
         _dsl_error(FailureCode.DSL_TYPE_ERROR, "AST 节点数量超过限制")
     if depth > limits.max_depth:
         _dsl_error(FailureCode.DSL_TYPE_ERROR, "AST 深度超过限制")
-    if lookback > limits.max_lookback:
+    bound = max(limits.max_lookback, 31 * max(limits.calendar_month_periods, default=0)) if (op == "calendar_month_delay" or child_has_month) else limits.max_lookback
+    if lookback > bound:
         _dsl_error(FailureCode.DSL_TYPE_ERROR, "AST lookback 超过限制")
 
     return _NodeAnalysis(

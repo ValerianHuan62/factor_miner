@@ -34,6 +34,27 @@ def _schedule_error(message: str) -> FactorMinerError:
     return FactorMinerError(FailureCode.CALENDAR_CONTRACT_INVALID, message)
 
 
+def build_month_end_target_schedule(
+    days: list[date], signal_start: date, signal_end: date, liquidation_date: date,
+) -> tuple[RebalanceWindow, ...]:
+    """月末收盘形成信号，次一市场日交易差额；最终清仓日必须事前明确。"""
+    if not days or days != sorted(set(days)) or any(type(d) is not date for d in days):
+        raise _schedule_error("市场日历必须为非空、有序且唯一的日期")
+    if signal_start > signal_end or liquidation_date not in days:
+        raise _schedule_error("信号区间或最终清仓日不合法")
+    last = {(d.year, d.month): d for d in days}
+    signals = [d for d in last.values() if signal_start <= d <= signal_end]
+    positions = {d: i for i, d in enumerate(days)}
+    if not signals or any(positions[d]+1 >= len(days) for d in signals):
+        raise _schedule_error("没有完整月末信号或缺少下一市场日")
+    entries = [days[positions[d]+1] for d in signals]
+    if liquidation_date <= entries[-1]:
+        raise _schedule_error("最终清仓日必须晚于最后一次入场")
+    exits = [*entries[1:], liquidation_date]
+    return tuple(RebalanceWindow(signal_date=s, entry_date=e, exit_date=x)
+                 for s, e, x in zip(signals, entries, exits, strict=True))
+
+
 def _calendar_dates(calendar: pl.DataFrame) -> tuple[date, ...]:
     """读取带 open 标志的真实交易日日历。"""
 

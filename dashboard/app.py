@@ -153,6 +153,7 @@ if __name__ == "__main__":
         {
             "研究": [
                 st.Page(main, title="研究驾驶舱", icon=":material/dashboard:", default=True),
+                st.Page("pages/12_研究代表库.py", title="研究代表库", icon=":material/filter_alt:"),
                 st.Page("pages/1_批次总览.py", title="批次总览", icon=":material/view_list:"),
                 st.Page("pages/6_假设工作台.py", title="假设工作台", icon=":material/lightbulb:"),
                 st.Page("pages/7_研究运行台.py", title="研究运行台", icon=":material/science:"),

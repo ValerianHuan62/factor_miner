@@ -231,14 +231,21 @@ class TrustedCandidateFactorSpec(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    spec_version: Literal["2"] = "2"
+    spec_version: Literal["2", "3"] = "2"
     hypothesis: HypothesisSpec
     expression: FactorNode
     required_fields: tuple[str, ...] = Field(min_length=1)
-    max_lookback: int = Field(ge=0, le=130)
+    max_lookback: int = Field(ge=0, le=558)
     availability: AvailabilitySpec
     created_at: datetime
     provenance: dict[str, str] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def observation_version(self):
+        """长期日历观察必须显式升级；旧版本仍限130个市场观察。"""
+        if self.spec_version == "2" and self.max_lookback > 130:
+            raise ValueError("旧候选 max_lookback 不得超过130")
+        return self
 
     @field_validator("required_fields")
     @classmethod
@@ -536,6 +543,7 @@ class TrustedVisibleCampaignSpec(BaseModel):
     spec_version: Literal["2"] = "2"
     visible_start: date
     visible_end: date
+    next_split_start: date | None = None
     candidate_ids: tuple[str, ...] = Field(min_length=1)
     evaluation_policy_id: str = Field(pattern=r"^evalpol_[0-9a-f]{24}$")
     research_family_id: str = Field(pattern=r"^family_[0-9a-f]{24}$")
@@ -563,6 +571,8 @@ class TrustedVisibleCampaignSpec(BaseModel):
 
         if self.visible_end < self.visible_start:
             raise ValueError("visible_end 不能早于 visible_start")
+        if self.next_split_start is not None and self.next_split_start <= self.visible_end:
+            raise ValueError("next_split_start 必须晚于 visible_end")
         return self
 
 
@@ -577,6 +587,7 @@ class CampaignSpec(BaseModel):
     visible_end: date = Field(
         validation_alias=AliasChoices("visible_end", "visible_end_date", "end")
     )
+    next_split_start: date | None = None
     candidate_ids: tuple[str, ...] = Field(min_length=1)
     max_hypotheses: int = Field(ge=1)
     alpha: FiniteFloat = Field(gt=0, le=1)
@@ -629,6 +640,8 @@ class CampaignSpec(BaseModel):
 
         if self.visible_end < self.visible_start:
             raise ValueError("visible_end 不能早于 visible_start")
+        if self.next_split_start is not None and self.next_split_start <= self.visible_end:
+            raise ValueError("next_split_start 必须晚于 visible_end")
         if self.max_hypotheses < len(self.candidate_ids):
             raise ValueError("max_hypotheses 不能小于已登记候选数量")
         return self

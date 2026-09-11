@@ -3930,5 +3930,47 @@ def _fail(error: Exception) -> None:
     raise typer.Exit(code=1)
 
 
+@app.command("register-joint-diagnostic")
+def register_joint_diagnostic(config: Path = typer.Argument(..., help="既有候选联合诊断配置"),
+                              output: Path = typer.Argument(..., help="新的独立产物目录")) -> None:
+    """冻结既有候选、原方向、输入身份和有限组合诊断预算。"""
+    from factor_miner.joint_study import register_joint_study
+    try:
+        _print_json({"status": "registered", "root": str(register_joint_study(config, output))})
+    except Exception as error:
+        _fail(error)
+
+
+@app.command("run-joint-diagnostic")
+def run_joint_diagnostic(root: Path = typer.Argument(..., help="已登记的联合诊断目录")) -> None:
+    """执行全池相关、滚动删除实验及组层重训子集 Shapley。"""
+    from factor_miner.joint_study import run_joint_study
+    try:
+        _print_json({"status": "completed_diagnostic", "root": str(run_joint_study(root))})
+    except Exception as error:
+        _fail(error)
+
+
+@app.command("adopt-joint-library")
+def adopt_joint_library_command(study: Path, output: Path) -> None:
+    """采纳完成诊断的代表清单，不改变原统计资格。"""
+    from factor_miner.joint_library import adopt_library
+    _print_json(adopt_library(study, output))
+
+
+@app.command("list-joint-library")
+def list_joint_library_command(root: Path, include_reserves: bool = False) -> None:
+    """输出默认代表及原矩阵位置，供后续计算显式选择输入。"""
+    from factor_miner.joint_library import active_members
+    _print_json(active_members(root, include_reserves))
+
+
+@app.command("publish-joint-library")
+def publish_joint_library_command(root: Path, dsn_env: str = typer.Option(...)) -> None:
+    """将成员角色投影到已有候选数据库。"""
+    from factor_miner_pg.joint_library_store import publish_library
+    _print_json(publish_library(root, os.environ[dsn_env]))
+
+
 if __name__ == "__main__":
     app()
