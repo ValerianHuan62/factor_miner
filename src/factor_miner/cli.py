@@ -3930,5 +3930,26 @@ def _fail(error: Exception) -> None:
     raise typer.Exit(code=1)
 
 
+@app.command("register-joint-diagnostic")
+def register_joint_diagnostic(config: Path = typer.Argument(..., help="既有候选联合诊断配置"),
+                              output: Path = typer.Argument(..., help="新的独立产物目录")) -> None:
+    """冻结既有候选、原方向、输入身份和有限组合诊断预算。"""
+    from factor_miner.joint_study import register_joint_study
+    try:
+        _print_json({"status": "registered", "root": str(register_joint_study(config, output))})
+    except Exception as error:
+        _fail(error)
+
+
+@app.command("run-joint-diagnostic")
+def run_joint_diagnostic(root: Path = typer.Argument(..., help="已登记的联合诊断目录")) -> None:
+    """执行全池相关、滚动删除实验及组层重训子集 Shapley。"""
+    from factor_miner.joint_study import run_joint_study
+    try:
+        _print_json({"status": "completed_diagnostic", "root": str(run_joint_study(root))})
+    except Exception as error:
+        _fail(error)
+
+
 if __name__ == "__main__":
     app()

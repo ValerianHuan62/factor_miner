@@ -1,0 +1,18 @@
+{
+  "version": "joint-contribution-diagnostic-v1",
+  "collection": "/explicit/read-only/research-collection",
+  "expected_candidates": 51,
+  "discovery_start": "2021-01-01",
+  "discovery_end": "2023-12-31",
+  "evaluation_start": "2024-01-01",
+  "evaluation_end": "2026-06-30",
+  "forbidden_start": "2026-07-01",
+  "train_signals": 104,
+  "retrain_signals": 13,
+  "alpha": 1000.0,
+  "permutations": 16,
+  "max_models": 180,
+  "max_seconds": 7200,
+  "max_artifact_bytes": 4294967296,
+  "research_question": "已有候选之间哪些互相替代，以及精简后组合的扣费参考表现如何变化？"
+}
