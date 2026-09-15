@@ -22,7 +22,7 @@ class ObservableCondition(BaseModel):
         "upside_tail", "downside_tail", "range_instability", "return_volume_coupling",
         "intraday_strength", "near_high", "positive_close_jump", "negative_close_jump",
         "positive_intraday_jump", "positive_gap_jump", "absolute_return_volume_coupling",
-        "range_persistence", "market_correlation", "market_curvature", "market_delay", "price_updates", "volatility_hedge", "volatility_uncertainty_hedge", "market_downside_asymmetry", "liquidity_bad_market", "bid_ask_bounce", "overnight_up_day_down", "stress_volume_support", "recent_return_acceleration", "market_cubic_response", "dispersion_hedge", "intraday_return", "market_residual_variation", "distributed_market_delay", "drawdown_recovery", "near_low", "anchor_reversal", "residual_pressure", "joint_tail_events", "oil_uncertainty_hedge", "salience_context", "closing_quote_displacement", "quoted_spread_width", "quote_trade_location", "turnover_level", "turnover_return_coupling", "capitalization_size", "leader_catchup", "industry_leader_strength", "industry_lag_beta", "monthly_share_change", "monthly_price_repair"] = "none"
+        "range_persistence", "market_correlation", "market_curvature", "market_delay", "price_updates", "volatility_hedge", "volatility_uncertainty_hedge", "market_downside_asymmetry", "liquidity_bad_market", "bid_ask_bounce", "overnight_up_day_down", "stress_volume_support", "recent_return_acceleration", "market_cubic_response", "dispersion_hedge", "intraday_return", "market_residual_variation", "distributed_market_delay", "drawdown_recovery", "near_low", "anchor_reversal", "residual_pressure", "joint_tail_events", "oil_uncertainty_hedge", "salience_context", "closing_quote_displacement", "quoted_spread_width", "quote_trade_location", "turnover_level", "turnover_return_coupling", "capitalization_size", "leader_catchup", "industry_leader_strength", "industry_lag_beta", "monthly_share_change", "monthly_price_repair", "annual_gross_profit", "annual_cash_flow", "annual_leverage", "annual_profit_improvement"] = "none"
     expected_response: Literal["increase", "decrease"] = "increase"
     origin: Literal["preregistered", "retrospective_audit"] = "preregistered"
 
@@ -37,7 +37,8 @@ def validate_construct(expression: object, condition: ObservableCondition | None
     if condition is None:
         return {"status": "证据不足", "reason": "没有冻结观察合同", "mechanism_status": "mechanism_unverified"}
     node = FactorNode.model_validate(expression)
-    validate_ast(node, allowed_fields={"open", "high", "low", "close", "volume", "trade_count", "market_return", "vix_change", "vvix_change", "ovx_change", "dispersion_change", "quote_bid_raw", "quote_ask_raw", "quote_close_raw", "market_cap_usd", "capitalization_price_raw", "capitalization_volume_raw", "stock_price_return", "leader_return", "industry_leader_return", "industry_peer_return", *({"event_adjusted_shares"} if calendar_months else set())}, forbidden_fields=(), limits=CALENDAR_MONTH_LIMITS if calendar_months else None)
+    from factor_miner.pit_financials import RAW_FIELDS
+    validate_ast(node, allowed_fields={*RAW_FIELDS, "open", "high", "low", "close", "volume", "trade_count", "market_return", "vix_change", "vvix_change", "ovx_change", "dispersion_change", "quote_bid_raw", "quote_ask_raw", "quote_close_raw", "market_cap_usd", "capitalization_price_raw", "capitalization_volume_raw", "stock_price_return", "leader_return", "industry_leader_return", "industry_peer_return", *({"event_adjusted_shares"} if calendar_months else set())}, forbidden_fields=(), limits=CALENDAR_MONTH_LIMITS if calendar_months else None)
     if condition.response_test in {"monthly_share_change", "monthly_price_repair"}:
         if not calendar_months:
             raise ValueError("月度构念反例需要显式日历月协议")
@@ -91,6 +92,10 @@ def validate_construct(expression: object, condition: ObservableCondition | None
             "stock_price_return": .001 * np.cos(index*.37),
             "industry_leader_return": .004 + np.random.default_rng(2047).normal(0,.012,len(index)),
             "industry_peer_return": .003 + np.random.default_rng(2741).normal(0,.008,len(index))})
+        result = result.with_columns(pl.lit(1e9).alias("annual_total_assets"),
+            pl.lit(2e8).alias("annual_gross_profit"), pl.lit(1e8).alias("annual_cash_flow_from_operating_activities"),
+            pl.lit(4e8).alias("annual_total_liabilities"), pl.lit(1e9).alias("prior_annual_total_assets"),
+            pl.lit(1.5e8).alias("prior_annual_gross_profit"))
         if condition.response_test == "leader_catchup":
             leader=result['leader_return'].to_numpy()
             lagged=np.r_[0.,leader[:-1]]
@@ -121,7 +126,14 @@ def validate_construct(expression: object, condition: ObservableCondition | None
         altered = panel(trend=.003 if condition.response_test in {"trend", "reversal"} else .0007,
             amplitude=.04 if condition.response_test in {"volatility", "relative_range"} else .01)
         test = condition.response_test
-        if test == 'trade_frequency_growth':
+        financial_response = {"annual_gross_profit": "annual_gross_profit",
+            "annual_profit_improvement": "annual_gross_profit",
+            "annual_cash_flow": "annual_cash_flow_from_operating_activities",
+            "annual_leverage": "annual_total_liabilities"}
+        if test in financial_response:
+            field = financial_response[test]
+            altered = altered.with_columns((pl.col(field) * 2).alias(field))
+        elif test == 'trade_frequency_growth':
             altered=altered.with_columns(pl.Series('trade_count',np.round(1000*np.exp(.02*index))))
         elif test == 'trade_return_coupling':
             close=altered['close'].to_numpy();returns=np.r_[0.,close[1:]/close[:-1]-1]

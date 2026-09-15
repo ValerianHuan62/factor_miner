@@ -1,0 +1,63 @@
+{
+  "markets": [
+    {
+      "market_id": "a_share",
+      "display_name": "A 股",
+      "adapter": "huan_quant_a_share_v1",
+      "data_root": "/path/to/huan_quant/pipeline/data",
+      "market_path": "processed/rq_spec_v1/l1_clean_market_data.parquet",
+      "state_path": "processed/rq_spec_v1/l2_state_table.parquet",
+      "manifest_path": "processed/rq_spec_v1/cleaning_report.json",
+      "artifact_root": "/path/to/factor_miner_artifacts/a_share",
+      "date_column": "date",
+      "asset_column": "order_book_id",
+      "market_columns": {
+        "open": "open",
+        "high": "high",
+        "low": "low",
+        "close": "close",
+        "volume": "volume",
+        "amount": "amount"
+      },
+      "state_columns": [
+        "valid_for_factor",
+        "is_suspended",
+        "can_buy",
+        "can_sell"
+      ],
+      "adjustment_convention": "后复权 OHLCV",
+      "calendar_version": "rqdatac",
+      "regime_manifest_path": null,
+      "regime_context_id": null
+    },
+    {
+      "market_id": "us_equity",
+      "display_name": "美股",
+      "adapter": "tradfi_us_equity_v1",
+      "data_root": "/path/to/TradFi/pipeline/data",
+      "market_path": "processed/tradfi_v1/l1_price_data.parquet",
+      "state_path": "processed/tradfi_v1/l2_state_table.parquet",
+      "manifest_path": "staging/crsp_eodhd_unified/latest/manifest.json",
+      "artifact_root": "/path/to/factor_miner_artifacts/us_equity",
+      "backtest_path": "/path/to/factor_miner_artifacts/us_equity/backtests/candidate.json",
+      "date_column": "session_date",
+      "asset_column": "security_id",
+      "market_columns": {
+        "open": "split_adjusted_open",
+        "high": "split_adjusted_high",
+        "low": "split_adjusted_low",
+        "close": "split_adjusted_close",
+        "volume": "split_adjusted_volume"
+      },
+      "state_columns": [
+        "valid_for_factor_compute",
+        "valid_for_factor_rank",
+        "valid_for_trading"
+      ],
+      "adjustment_convention": "拆股复权 OHLCV",
+      "calendar_version": "NYSE/Nasdaq 显式交易日历",
+      "regime_manifest_path": null,
+      "regime_context_id": null
+    }
+  ]
+}

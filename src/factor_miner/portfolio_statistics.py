@@ -201,14 +201,16 @@ def calculate_portfolio_metrics(
     """按实际交易日日历计算各组合收益序列指标。
 
     `daily_returns` 只能包含目标多头的毛净收益和基准收益；
-    `benchmark_returns` 必须含唯一的 `exit_date` 和 `benchmark_return`。
+    `benchmark_returns` 必须含唯一的逐交易日 entry_date、exit_date 和 benchmark_return。
     """
 
     required = {"entry_date", "exit_date"}
     if not required.issubset(daily_returns.columns):
         raise _statistics_error("组合收益缺少 entry_date 或 exit_date")
-    if set(benchmark_returns.columns) != {"exit_date", "benchmark_return"}:
-        raise _statistics_error("基准收益必须精确包含 exit_date 和 benchmark_return")
+    if set(benchmark_returns.columns) != {"entry_date", "exit_date", "benchmark_return"}:
+        raise _statistics_error(
+            "基准收益必须精确包含 entry_date、exit_date 和 benchmark_return"
+        )
     if daily_returns.height == 0 or benchmark_returns.height == 0:
         raise _statistics_error("组合或基准收益为空")
     if daily_returns.select(pl.col("exit_date").is_duplicated().any()).item():

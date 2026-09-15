@@ -104,6 +104,8 @@ def _write_fixture(
                 "is_suspended": is_suspended,
                 "can_buy": can_buy,
                 "can_sell": can_sell,
+                "can_open_long": can_buy,
+                "can_close_long": can_sell,
                 "valid_for_factor_compute": compute,
                 "valid_for_factor_rank": rank,
                 "valid_for_trading": trading,
@@ -113,7 +115,13 @@ def _write_fixture(
             state_rows.append(row)
     for row in market_rows:
         label_rows.append(
-            {"date": row["date"], "asset": row["asset"], "label_o2o_5d": 0.01}
+            {
+                "date": row["date"],
+                "asset": row["asset"],
+                "label_entry_date": row["date"] + timedelta(days=1),
+                "label_exit_date": row["date"] + timedelta(days=6),
+                "label_o2o_5d": 0.01,
+            }
         )
     if duplicate_market_key:
         market_rows.append(market_rows[-1].copy())
@@ -153,7 +161,11 @@ class CompanyAShareDataSourceTest(unittest.TestCase):
                     "valid_for_factor_compute",
                     "valid_for_factor_rank",
                     "valid_for_trading",
+                    "can_open_long",
+                    "can_close_long",
                     "label_o2o_5d",
+                    "label_entry_date",
+                    "label_exit_date",
                 ],
             )
             self.assertEqual(frame.height, 6)
@@ -191,6 +203,8 @@ class CompanyAShareDataSourceTest(unittest.TestCase):
                     "valid_for_factor_compute",
                     "valid_for_factor_rank",
                     "valid_for_trading",
+                    "can_open_long",
+                    "can_close_long",
                 ],
             )
 
@@ -343,7 +357,10 @@ class CompanyAShareDataSourceTest(unittest.TestCase):
                 OutcomeRequest(date(2020, 1, 2), date(2020, 1, 3))
             ).collect()
             self.assertEqual(provenance.label_id, "company_a_share_o2o_5d_v1")
-            self.assertEqual(frame.columns, ["date", "asset", "label_o2o_5d"])
+            self.assertEqual(
+                frame.columns,
+                ["date", "asset", "label_o2o_5d", "label_entry_date", "label_exit_date"],
+            )
 
     def test_reference_source_requires_frozen_manifest_and_factor_set(self) -> None:
         """reference source 必须拒绝错误 manifest，并只投影冻结因子。"""
@@ -497,13 +514,21 @@ def _write_trading_fixture(
                     "is_suspended": False,
                     "can_buy": True,
                     "can_sell": True,
+                    "can_open_long": True,
+                    "can_close_long": True,
                     "valid_for_factor_compute": True,
                     "valid_for_factor_rank": True,
                     "valid_for_trading": True,
                 }
             )
             label_rows.append(
-                {"date": current, "asset": asset, "label_o2o_5d": 0.01}
+                {
+                    "date": current,
+                    "asset": asset,
+                    "label_entry_date": current + timedelta(days=1),
+                    "label_exit_date": current + timedelta(days=6),
+                    "label_o2o_5d": 0.01,
+                }
             )
     paths = (root / "market.parquet", root / "state.parquet", root / "label.parquet")
     pl.DataFrame(market_rows).write_parquet(paths[0])

@@ -93,11 +93,9 @@ def align_open_to_open_panel(
     entry_market = market.rename(
         {"trade_date": "entry_date", "open": "entry_open"}
     )
-    exit_market = market.select(
-        "security_id",
-        pl.col("trade_date").alias("exit_price_date"),
-        pl.col("open").alias("exit_open"),
-    ).sort(["security_id", "exit_price_date"])
+    exit_market = market.rename(
+        {"trade_date": "exit_date", "open": "exit_open"}
+    )
     entered = factor.join(
             entry_market,
             on=["entry_date", "security_id"],
@@ -105,23 +103,22 @@ def align_open_to_open_panel(
     )
     if entered.filter(pl.col("entry_open").is_null()).limit(1).collect().height:
         raise _data_error("open-to-open 面板缺少入场开盘价")
-    aligned = entered.sort(["security_id", "exit_date"]).join_asof(
+    aligned = entered.join(
         exit_market,
-        left_on="exit_date",
-        right_on="exit_price_date",
-        by="security_id",
-        strategy="backward",
+        on=["exit_date", "security_id"],
+        how="left",
     )
     if (
         aligned.filter(
             pl.col("exit_open").is_null()
-            | (pl.col("exit_price_date") < pl.col("entry_date"))
         )
         .limit(1)
         .collect()
         .height
     ):
-        raise _data_error("open-to-open 面板缺少退出日前可见估值价格")
+        raise _data_error(
+            "固定退出日缺少开盘价；禁止回退到旧价格，请改用因果成交状态机重试退出"
+        )
     return aligned.with_columns(
         (pl.col("exit_open") / pl.col("entry_open") - 1.0).alias("asset_return")
     )

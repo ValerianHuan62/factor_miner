@@ -645,6 +645,7 @@ class WorkflowTest(unittest.TestCase):
                     "inference.json",
                     "redundancy.json",
                     "candidate_package.json",
+                    "construct_validation.json",
                 },
             )
             events = JsonlLedger(root).read_events()

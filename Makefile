@@ -18,4 +18,4 @@ cli:
 	uv run factor-miner --help
 
 dashboard:
-	uv run streamlit run dashboard/app.py --server.headless true --server.address 127.0.0.1 --server.port 8501
+	PYTHONPATH=src:. uv run --frozen python -m streamlit run dashboard/app.py --server.headless true --server.address 127.0.0.1 --server.port 8501

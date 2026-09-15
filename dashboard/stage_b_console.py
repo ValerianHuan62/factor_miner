@@ -16,7 +16,7 @@ from typing import Any
 
 
 def _required_env(name: str) -> Path:
-    """读取必须显式提供的服务器路径。"""
+    """读取必须显式提供的研究路径。"""
 
     value = os.environ.get(name, "").strip()
     if not value:
@@ -126,12 +126,12 @@ def main() -> None:
     try:
         import streamlit as st  # type: ignore[import-not-found]
     except ImportError as error:
-        raise RuntimeError("运行操作台前请在服务器环境安装 Streamlit") from error
+        raise RuntimeError("运行操作台前请安装 Streamlit") from error
 
     st.set_page_config(page_title="Factor Miner 阶段 B 操作台", layout="wide")
     st.title("阶段 B：DeepSeek 假设 → 批准 → 三候选 → Pilot")
     st.caption(
-        "操作台与只读结果 Dashboard 分离。所有真实数据、因子、IC 和回测仍只在公司 Linux 执行。"
+        "操作台与只读结果 Dashboard 分离。所有真实数据、因子、IC 和回测均在显式配置的本地或远端研究环境执行。"
     )
 
     try:
@@ -149,7 +149,7 @@ def main() -> None:
         approver_role = _required_text_env("FM_PILOT_APPROVER_ROLE")
     except RuntimeError as error:
         st.error(str(error))
-        st.info("请先在公司 Linux 的服务进程环境中显式配置阶段 B 路径。")
+        st.info("请先在当前研究环境中显式配置阶段 B 路径。")
         return
 
     runs = _available_runs(artifact_root)
@@ -197,7 +197,7 @@ def main() -> None:
         )
     elif hypothesis_response is None:
         if st.button("生成假设（调用 DeepSeek）", type="primary"):
-            with st.spinner("正在服务器执行脱敏 DeepSeek 请求……"):
+            with st.spinner("正在研究环境执行脱敏 DeepSeek 请求……"):
                 st.code(
                     _run_cli(
                         [
@@ -282,7 +282,7 @@ def main() -> None:
         and not state.get("pilot_run_id")
     ):
         st.subheader("表达式硬校验与阶段 A Pilot")
-        st.info("本按钮会调用 DeepSeek 生成恰好三个表达式，随后在本地硬校验并在服务器运行阶段 A。")
+        st.info("本按钮会调用 DeepSeek 生成恰好三个表达式，随后在本地硬校验并在当前研究环境运行阶段 A。")
         if st.button("生成表达式并运行 Pilot", type="primary"):
             with st.spinner("正在生成、编译、计算 IC/组合并发布……"):
                 output = _run_cli(

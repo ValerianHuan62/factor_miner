@@ -150,12 +150,15 @@ def check_resource_usage(plan: dict, usage: dict) -> dict:
 class ResearchResourceGuard:
     """在阶段边界检查本次运行耗时与实际写入量；模型用量由调用方独立计量。"""
 
-    def __init__(self, plan: dict, root: Path):
+    def __init__(self, plan: dict, root: Path, *, external_check=None):
         self.limits = plan.get('resource_limits') if plan.get('version') == 'bounded-research-v2' else None
         self.root = root
         self.started = time.monotonic()
+        self.external_check = external_check
 
     def check(self) -> None:
+        if self.external_check is not None:
+            self.external_check()
         if self.limits is None:
             return
         elapsed = time.monotonic() - self.started

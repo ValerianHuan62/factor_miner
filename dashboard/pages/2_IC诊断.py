@@ -2,16 +2,19 @@
 
 import streamlit as st
 
-from dashboard.read import load_server_snapshot
-from dashboard.ui import apply_theme, candidate_ids, candidate_name, hero, ic_values, make_ic_decay_figure, make_ic_sequence_figure, metric_card, number, pct, section
+from dashboard.read import load_optional_snapshot
+from dashboard.ui import apply_theme, candidate_ids, candidate_name, hero, ic_values, make_ic_decay_figure, make_ic_sequence_figure, metric_card, number, pct, render_no_published_run, section
 
 
 apply_theme(st, page_title="Factor Miner｜IC 诊断")
 try:
-    snapshot = load_server_snapshot()
+    snapshot = load_optional_snapshot()
 except Exception as error:
     st.error(str(error))
 else:
+    if snapshot is None:
+        render_no_published_run(st, lens="IC DIAGNOSTICS")
+        st.stop()
     ids = candidate_ids(snapshot)
     hero(
         st,
@@ -27,9 +30,9 @@ else:
         diagnostics = ic_values(snapshot, candidate_id)
         cards = st.columns(4)
         with cards[0]:
-            metric_card(st, "IC 均值", pct(diagnostics.get("ic_mean")), "主期限 5 日")
+            metric_card(st, "IC 均值", number(diagnostics.get("ic_mean"), 4), "原始小数 · 主期限 5 日")
         with cards[1]:
-            metric_card(st, "RankIC 均值", pct(diagnostics.get("rank_ic_mean")), "主期限 5 日")
+            metric_card(st, "RankIC 均值", number(diagnostics.get("rank_ic_mean"), 4), "原始小数 · 主期限 5 日")
         with cards[2]:
             metric_card(st, "RankIC HAC t", number(diagnostics.get("rank_ic_hac_t")), "考虑时间依赖")
         with cards[3]:

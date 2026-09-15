@@ -4,6 +4,7 @@ import streamlit as st
 
 from dashboard.read import load_server_hypothesis_batch
 from dashboard.ui import apply_theme, hero, metric_card, section
+from factor_miner.errors import FactorMinerError
 
 
 def _direction(value: object) -> str:
@@ -31,9 +32,12 @@ def main() -> None:
             st,
             kicker="HYPOTHESIS DESK / READ-ONLY",
             title="还没有可展示的假设批次",
-            copy="请在服务器环境设置 FM_DASHBOARD_HYPOTHESIS_PATH，指向正式生成的 hypothesis_drafts_*.json。此页只读待审批草案，不会把草案自动变成因子。",
+            copy="当前市场还没有待审批假设文件。生成草案后，可用可选的 FM_DASHBOARD_HYPOTHESIS_PATH 指向 hypothesis_drafts_*.json；此页不会把草案自动变成因子。",
         )
-        st.warning(str(error))
+        if not isinstance(error, FactorMinerError):
+            st.error(f"假设文件存在但无法读取：{error}")
+        else:
+            st.caption("等待当前市场生成并登记正式假设草案。")
         return
 
     hero(

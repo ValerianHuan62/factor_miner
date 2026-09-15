@@ -1,0 +1,49 @@
+{
+  "integrity": {
+    "aggregate_sha256": "e7329edaeef15ef4e5c45fde1dcf1d316dac9a9effd1a6cf4a7635d65b0c6146",
+    "referenced_sha256_count": 75
+  },
+  "paired_shadow": {
+    "batch_status_counts": {
+      "completed": 17,
+      "not_recorded": 8
+    },
+    "probe_count": 48,
+    "probe_status_counts": {
+      "abstained": 24,
+      "accepted": 24
+    }
+  },
+  "protocol": {
+    "bonferroni_denominators": [
+      30
+    ]
+  },
+  "publication": {
+    "candidate_metric_records": 338,
+    "confirmation_failed": 99,
+    "confirmation_passed": 239,
+    "stress_test_eligible": 239,
+    "stress_test_ineligible": 99
+  },
+  "research_budget": {
+    "approved_hypotheses": 250,
+    "evaluated_slots": 338,
+    "failed_slots": 412,
+    "registered_slots": 750,
+    "rejected_hypotheses": 0
+  },
+  "runtime_seconds": {
+    "max": 71262.078,
+    "mean": 6796.624,
+    "median": 3489.896,
+    "min": 554.118
+  },
+  "schema": "factor-miner-technical-report-aggregate-v1",
+  "scope": {
+    "all_terminal_completed": true,
+    "autonomous_batches": 25,
+    "first_started_at": "2026-08-18T05:38:33.473849Z",
+    "last_completed_at": "2026-08-26T02:00:25.556194Z"
+  }
+}

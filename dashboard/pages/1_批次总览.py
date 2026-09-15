@@ -2,17 +2,20 @@
 
 import streamlit as st
 
-from dashboard.read import load_server_snapshot
-from dashboard.ui import apply_theme, candidate_ids, candidate_name, candidate_payload, candidate_source_id, direction_values, hero, ic_values, metric_card, number, pct, portfolio_values, section
+from dashboard.read import load_optional_snapshot
+from dashboard.ui import apply_theme, candidate_ids, candidate_name, candidate_payload, candidate_source_id, direction_values, hero, ic_values, metric_card, number, pct, portfolio_values, render_no_published_run, section
 from factor_miner.dashboard_labels import chinese_candidate_label
 
 
 apply_theme(st, page_title="Factor Miner｜批次总览")
 try:
-    snapshot = load_server_snapshot()
+    snapshot = load_optional_snapshot()
 except Exception as error:
     st.error(str(error))
 else:
+    if snapshot is None:
+        render_no_published_run(st, lens="BATCH OVERVIEW")
+        st.stop()
     ids = candidate_ids(snapshot)
     hero(
         st,
@@ -71,8 +74,8 @@ else:
                 "发现方向": {"positive": "正向", "negative": "负向"}.get(direction.get("selected_direction"), "未完成"),
                 "方向关系": {"supported": "一致", "reversed": "反转"}.get(direction.get("hypothesis_relation"), "未完成"),
                 "来源": chinese_candidate_label("source_kind", definition.get("source_kind")),
-                "IC 均值": ic.get("ic_mean") * 100 if isinstance(ic.get("ic_mean"), (int, float)) else None,
-                "RankIC 均值": ic.get("rank_ic_mean") * 100 if isinstance(ic.get("rank_ic_mean"), (int, float)) else None,
+                "IC 均值": ic.get("ic_mean") if isinstance(ic.get("ic_mean"), (int, float)) else None,
+                "RankIC 均值": ic.get("rank_ic_mean") if isinstance(ic.get("rank_ic_mean"), (int, float)) else None,
                 "HAC t 值": ic.get("rank_ic_hac_t"),
                 "目标多头 Sharpe": spread.get("sharpe"),
                 "质量状态": chinese_candidate_label("quality_status", metrics.get("quality_status", "not_assessed")),
@@ -83,8 +86,8 @@ else:
             width="stretch",
             hide_index=True,
             column_config={
-                "IC 均值": st.column_config.NumberColumn(format="%.2f%%"),
-                "RankIC 均值": st.column_config.NumberColumn(format="%.2f%%"),
+                "IC 均值": st.column_config.NumberColumn(format="%.4f"),
+                "RankIC 均值": st.column_config.NumberColumn(format="%.4f"),
                 "HAC t 值": st.column_config.NumberColumn(format="%.2f"),
                 "目标多头 Sharpe": st.column_config.NumberColumn(format="%.2f"),
             },

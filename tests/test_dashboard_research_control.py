@@ -268,6 +268,7 @@ class DashboardResearchControlTest(unittest.TestCase):
         store = PostgresDashboardStore.__new__(PostgresDashboardStore)
         store._psycopg = _Psycopg(connection)
         store._dsn = "postgresql://synthetic"
+        store._market_id = "a_share"
         store.project_control_state(
             _state(hypotheses.run_id),
             hypotheses=hypotheses,
@@ -285,13 +286,14 @@ class DashboardResearchControlTest(unittest.TestCase):
             params for sql, params in connection.calls
             if "INSERT INTO research_runs" in sql
         )
-        self.assertEqual(run_insert[4], 0)
+        self.assertEqual(run_insert[5], 0)
 
     def test_actual_factor_count_is_updated_after_successful_evaluation(self) -> None:
         connection = _Connection()
         store = PostgresDashboardStore.__new__(PostgresDashboardStore)
         store._psycopg = _Psycopg(connection)
         store._dsn = "postgresql://synthetic"
+        store._market_id = "a_share"
 
         store.update_research_run_factor_count("autrun_" + "1" * 24, 12)
 

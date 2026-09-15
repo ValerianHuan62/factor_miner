@@ -41,3 +41,6 @@ models/
 *.tmp
 *.tmp.*
 .worktrees/
+
+# 本地界面设计参考资料，不是运行时代码或项目文档
+dashboard/awesome-design-md/

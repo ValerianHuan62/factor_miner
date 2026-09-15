@@ -2,9 +2,15 @@
 
 本文件只保存 agent 不得违反的硬规则。人类运行方式写在 `README.md`，设计依据写在 `docs/`。
 
+## 当前工作范围
+
+- 当前暂停新增因子挖掘，默认使用已采纳的 A 股研究代表库开展既有因子与策略工作；除非用户明确恢复新探索，不启动候选生成、自主续跑或新增挖掘定时任务。操作入口见 `docs/当前流程与日常使用.md`，原候选资格不因代表库采纳而升级。
+- 本机审核后的因子通过 `export-joint-features` 版本化交付到 `/Users/huan/workplace/huan_quant/pipeline/feature/`，保留 Factor Miner 来源清单；不恢复旧 `factor_features_output/`，不将原始宽表冒充标准化 Dataset。合同见 `docs/runbooks/因子宽表导出与模型接入.md`。
+
 ## 自动 Skill 与文档语言
 
 - 每次处理本项目的量化研究、因子、数据、统计、测试或技术文档任务时，必须先完整读取并使用 `skills/quant_coding/SKILL.md`。
+- 处理既有因子或组合的收益来源、行业／市值归因、pure alpha 判断、模型与成本诊断时，读取并使用 `skills/factor-attribution/SKILL.md`；局部请求只执行有关步骤，不因此自动扩大为挖因子或新增定时跟踪。
 - 所有新增或修改的 Markdown 文档，其标题与正文必须使用中文；代码标识、命令、路径、标准缩写和专有名词可以保留原文。
 - 向用户解释系统时，必须先说明金融研究过程、结论边界和风险，再说明程序实现。
 - 项目内 Skill 只约束开发代理，不得成为核心包或 CLI 的运行时依赖；删除 Skill 后完整流程仍须可运行。
@@ -18,6 +24,17 @@
 - 输出只能称为“通过当前协议验证的候选因子”，不得直接称为认证 Alpha、生产结论或实盘建议。
 
 ## 研究红线
+
+- 用户于2026年9月10日指定后续 A 股新挖掘以买卖合计万14（`round_trip_cost_bps=14`）为基准成本；20/40bps为压力诊断，不自动当作研究候选入库门槛。既有计划不改写。研究候选入库遵循 `docs/contracts/A股双边万14成本与研究候选入库.md`，待确认标签不得伪装正式统计通过。
+
+- A 股与美股新增信号探索默认遵循 `docs/contracts/跨市场探索入口与确认分层.md`，使用 `favor-exploration-v1` 和共同的 `register-favor` / `submit-favor` / `run-favor`。探索资格与正式通过严格分开；不得恢复旧失败、降低最终确认标准或自动启动研究。
+
+- 用户指定的 FaVOR 联合确认研究统一遵循 `docs/contracts/跨市场假设约束与FaVOR联合研究.md`，使用 `register-favor` / `submit-favor` / `run-favor`。DeepSeek API 与 GPT‑6 不得走不同验证标准；旧批次仅保留复现入口，不能冒充已通过新协议。FaVOR 多条件联合触发与三档方向选择性是此路径的必需阶段，Ridge 仅作为单独对照。
+
+- 美股后续发现及历史重新分层遵循 `docs/contracts/组合研究池与有限机制预算.md`。组合研究资格与原单因子显著性分别记录；历史淘汰候选只能作为历史查重对象，不能充当有效组合代表。
+- 新增美股研究必须先通过 `validate-search-budget` CLI 校验有限的信息来源、机制和模型预算；不得继续以行政批次编号递增校正倍数的无限脚本循环。旧批次配置、校正及试验记录原样保留。
+
+- 后续研究与资源使用遵循 `docs/contracts/有限研究与资源复用.md`。新增真实 FaVOR 使用 `bounded-research-v2`，先做不读收益的可行性预检；每轮冻结一个问题、主要比较、信息增量依据和资源上限，结束后不自动扩展。代理计量累计模型响应、输出 Token、时间和产物用量，达到上限或无新增认识时停止；未知用量不得当成零。使用简短状态交接和 CLI 摘要，不反复载入完整会话和明细。旧协议复现不授予新增研究资格。
 
 - 候选必须在看到结果前冻结主张、机制、预期方向、可观察代理、独立验证方案、竞争解释、失效方式、证伪路径和来源。
 - 经济叙事必须可独立验证；未执行独立机制检验时只能标记 `mechanism_unverified`。结果后解释不得覆盖事前假设。
@@ -54,9 +71,12 @@
 
 ## Dashboard 读模型硬规则
 
+- 网页 API 研究仅在用户点击启动后派发正式 CLI；代码、市场、预算与隐私检查不能省略。审核采纳状态与独立统计确认分别展示，不改写历史资格。入口合同见 `docs/runbooks/Dashboard的API研究与审核状态.md`。
+
 - PostgreSQL 中的候选业务编号必须使用全库稳定顺延的 `huanNNN`；正式槽位 ID 和内容寻址 candidate ID 只能保存在 `source_candidate_id` 等审计列，不得作为 Dashboard 主显示编号。
 - 同一 `source_candidate_id` 必须永久复用同一 `huanNNN`；编号分配必须在数据库事务内串行执行，禁止按单次运行重新从 `huan001` 开始。
 - Stage C 已评价候选写入 PostgreSQL 前必须具备非空的 `ic_mean`、`rank_ic_mean`、`ic_std`、`rank_ic_std`、`ic_ir`、`rank_ic_ir`、IC/RankIC HAC t 值、`win_rate`、年化收益、最大回撤、Sharpe 和 information ratio；任一缺失必须拒绝发布和投影，不得以 NULL 静默代替。
+- 用户批准的 `report_unresolved` 记账报告为显式例外：IC 必须完整，未确定最终回收价值时实际收益、回撤和 Sharpe 保持 NULL，并同时发布未确定持仓、最后报价参考估值及零回收压力情景。必须显示原因和情景口径，不得标成正式投资表现通过，也不得用压力指标填充实际指标。
 - `win_rate` 必须由冻结组合口径的逐期 `Q10_Q1_net_return` 计算；不得由年化收益、Sharpe 或累计收益反推。
 
 ## 工程规则

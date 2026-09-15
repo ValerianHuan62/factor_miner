@@ -2,16 +2,19 @@
 
 import streamlit as st
 
-from dashboard.read import load_server_snapshot
-from dashboard.ui import apply_theme, hero, metric_card, section
+from dashboard.read import load_optional_snapshot
+from dashboard.ui import apply_theme, hero, metric_card, render_no_published_run, section
 
 
 apply_theme(st, page_title="Factor Miner｜运行审计")
 try:
-    snapshot = load_server_snapshot()
+    snapshot = load_optional_snapshot()
 except Exception as error:
     st.error(str(error))
 else:
+    if snapshot is None:
+        render_no_published_run(st, lens="RUN AUDIT")
+        st.stop()
     hero(
         st,
         kicker="RUN AUDIT",

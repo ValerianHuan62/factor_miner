@@ -55,25 +55,61 @@ def library_rows(root: Path, market_id: str, library: Path | None = None) -> lis
     members = {r['factor_id']:r for r in value['members']}
     if set(members) != {r['编号'] for r in rows}:
         raise ValueError('代表库覆盖范围与原候选库不符')
-    return [dict(r, 库内角色=members[r['编号']]['role'], 代表编号=members[r['编号']]['representative']) for r in rows]
+    return [dict(r, 库内角色=members[r['编号']]['role'], 代表编号=members[r['编号']]['representative'],
+                 审核状态='已审核 · 已采纳' if members[r['编号']]['role']=='研究代表' else '已审核 · 同类替补',
+                 统计验证=r['状态']) for r in rows]
 
 
 def render_cost_candidates(st, profile):
-    if profile is None or profile.cost_review_path is None: return
-    try: rows=library_rows(profile.cost_review_path,profile.market_id,getattr(profile,'joint_library_path',None))
+    if profile is None or profile.cost_review_path is None:
+        st.info('当前市场尚未发布研究候选库。完成研究并采纳后，可在这里查看。')
+        return
+    try:
+        rows=library_rows(profile.cost_review_path,profile.market_id,profile.joint_library_path)
     except (OSError,ValueError,KeyError) as error:
-        st.error('研究候选库读取失败：'+str(error));return
-    st.subheader('研究候选库 · 待正式确认')
-    st.caption('按原方向、基础测量检验和双边万14参考净收益筛选。历史统计校正未知，尚未完成独立机制与正式确认；实际收益为空时，参考估值不代表已实现收益。')
-    if getattr(profile,'joint_library_path',None):
-        st.caption(f"已采纳精简研究池：{sum(r['库内角色']=='研究代表' for r in rows)} 个代表，{sum(r['库内角色']=='同类替补' for r in rows)} 个替补。")
-        scope=st.radio('查看范围',('研究代表','同类替补','全部'),horizontal=True,key='joint_library_scope')
-        rows=[r for r in rows if scope=='全部' or r['库内角色']==scope]
-    visible=('编号','原候选','名称','IC均值','RankIC均值','参考年化','参考最大回撤','状态')
-    st.dataframe([{k:r[k] for k in visible} for r in rows],hide_index=True,width='stretch',column_config={
-        '名称':st.column_config.TextColumn(width='medium'),
-        'IC均值':st.column_config.NumberColumn('IC 均值（ic_mean）',format='%.6f'),
-        'RankIC均值':st.column_config.NumberColumn(format='%.6f'),
-        **{k:st.column_config.NumberColumn(format='percent') for k in ('实际年化','参考年化','参考最大回撤')}})
-    with st.expander('公式、实际收益与同类关系'):
-        st.dataframe(rows,hide_index=True,width='stretch')
+        st.error('研究库暂时无法读取，请检查当前市场的发布连接。')
+        with st.expander('查看原因'): st.text(str(error))
+        return
+    adopted=bool(profile.joint_library_path)
+    st.subheader(f'{profile.display_name} · 已审核因子' if adopted else f'{profile.display_name} · 研究候选')
+    cols=st.columns(3)
+    cols[0].metric('研究代表' if adopted else '研究候选',sum(r.get('库内角色')=='研究代表' for r in rows) if adopted else len(rows))
+    cols[1].metric('同类替补',sum(r.get('库内角色')=='同类替补' for r in rows))
+    cols[2].metric('已审核' if adopted else '待审核',len(rows))
+    st.caption('研究代表用于后续策略与模型研究；同类替补保留备查。审核采纳和独立统计确认分别记录。' if adopted else '探索结果已入库，审核与独立统计确认分别记录。')
+    left,right=st.columns([2,3])
+    with left:
+        scope=st.radio('成员范围',('研究代表','同类替补','全部'),horizontal=True,key=f'library_scope_{profile.market_id}') if adopted else '全部'
+    with right:
+        query=st.text_input('搜索因子',placeholder='编号、名称或测量',key=f'library_search_{profile.market_id}').strip().casefold()
+    filtered=[r for r in rows if (scope=='全部' or r.get('库内角色')==scope) and
+              (not query or query in (r['编号']+' '+r['名称']).casefold())]
+    if not filtered:
+        st.info('没有匹配的因子，请修改搜索或成员范围。');return
+    visible=[dict(编号=r['编号'],名称=r['名称'],审核状态=r.get('审核状态','待审核'),
+        IC=r['IC均值'],RankIC=r['RankIC均值'],参考年化=r['参考年化'],参考最大回撤=r['参考最大回撤']) for r in filtered]
+    st.dataframe(visible,hide_index=True,width='stretch',column_config={
+        '名称':st.column_config.TextColumn(width='large'),
+        'IC':st.column_config.NumberColumn(format='%.6f'),
+        'RankIC':st.column_config.NumberColumn(format='%.6f'),
+        **{k:st.column_config.NumberColumn(format='percent') for k in ('参考年化','参考最大回撤')}})
+    selected=st.selectbox('因子详情',[r['编号'] for r in filtered],
+                          format_func=lambda v:next(r['编号']+' · '+r['名称'] for r in filtered if r['编号']==v),key=f'factor_detail_{profile.market_id}')
+    row=next(r for r in filtered if r['编号']==selected)
+    with st.container(border=True):
+        st.markdown('#### '+row['名称'])
+        st.caption(row.get('审核状态','待审核')+' · '+row.get('库内角色','研究候选'))
+        st.code(row['公式'],language=None)
+        metrics=st.columns(3)
+        metrics[0].metric('参考 Sharpe',f"{row['参考Sharpe']:.2f}")
+        metrics[1].metric('双边成本',f"{row['双边成本bps']:g} bps")
+        metrics[2].metric('未确定持仓',row['未确定持仓'])
+        if row.get('库内角色')=='同类替补':st.write('对应研究代表：'+row['代表编号'])
+    with st.expander('统计验证与收益口径'):
+        st.write('审核采纳：'+row.get('审核状态','未登记审核'))
+        st.write('独立统计确认：'+row.get('统计验证',row['状态']))
+        st.write('采纳记录已生效；该验证字段不要求重复人工确认。历史试验校正、独立机制与样本外验证按原协议记录。')
+        st.write('参考收益按最后报价估值；持仓终值未确定时不代表已实现收益。')
+        st.write('同类关系：'+row['同类关系'])
+    st.download_button('下载当前因子清单', __import__('polars').DataFrame(visible).write_csv().encode('utf-8-sig'),
+                       file_name=f'factor_miner_{profile.market_id}_catalog.csv',mime='text/csv')

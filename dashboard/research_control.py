@@ -24,6 +24,37 @@ from factor_miner.semantic_coverage import (
 from factor_miner.lightweight_evolution import LightweightMemoryStore
 
 
+def load_report_hypotheses(backtest_roots: tuple[Path, ...]) -> tuple[dict[str, object], ...]:
+    """读取已发布报告中的原始中文假设，不把历史说明伪装成待审批草案。"""
+
+    rows: list[dict[str, object]] = []
+    seen: set[tuple[str, str]] = set()
+    for root in backtest_roots:
+        path = root.parent / "run_manifest.json"
+        if not path.is_file():
+            continue
+        manifest = json.loads(path.read_text("utf-8"))
+        for report in manifest.get("reports", []):
+            identity = (str(manifest["run_id"]), str(report["hypothesis_id"]))
+            if identity in seen:
+                continue
+            seen.add(identity)
+            hypothesis = report["hypothesis"]
+            rows.append({
+                "logical_slot_id": identity[1], "history_run_id": identity[0],
+                "claim_zh": hypothesis["claim"], "mechanism_zh": hypothesis["mechanism"],
+                "expected_direction": _direction(hypothesis["expected_sign"]),
+                "observable_proxy_zh": hypothesis["observable_proxy"],
+                "independent_verification_zh": hypothesis["independent_verification"],
+                "competing_explanations_zh": hypothesis["competing_explanations"],
+                "failure_modes_zh": hypothesis["failure_modes"],
+                "falsification_path_zh": hypothesis["falsification_path"],
+                "source_records_zh": hypothesis["source_refs"],
+                "semantic_plan": None, "semantic_labels_zh": "历史假设未登记事件与背景标签",
+            })
+    return tuple(rows)
+
+
 def _direction(value: object) -> str:
     return {"positive": "正向", "negative": "负向", "neutral": "中性"}.get(
         str(value), str(value)

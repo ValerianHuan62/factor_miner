@@ -29,6 +29,7 @@ def returns() -> pl.DataFrame:
 def benchmark() -> pl.DataFrame:
     return pl.DataFrame(
         {
+            "entry_date": [date(2026, 1, 2), date(2026, 1, 6)],
             "exit_date": [date(2026, 1, 6), date(2026, 1, 10)],
             "benchmark_return": [0.02, 0.01],
         }

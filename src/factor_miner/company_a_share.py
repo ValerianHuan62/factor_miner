@@ -7,6 +7,7 @@ from pathlib import Path
 import polars as pl
 
 from factor_miner.data_source import (
+    EXECUTION_STATE_COLUMNS,
     IDENTITY_COLUMNS,
     LABEL_COLUMNS,
     MARKET_COLUMNS,
@@ -114,7 +115,7 @@ class CompanyAShareDataSource:
         state = (
             pl.scan_parquet(self._required_uri("state_uri"))
             .filter(pl.col("date").is_between(lower_bound, request.end, closed="both"))
-            .select([*IDENTITY_COLUMNS, *MASK_COLUMNS])
+            .select([*IDENTITY_COLUMNS, *MASK_COLUMNS, *EXECUTION_STATE_COLUMNS])
         )
         label = (
             pl.scan_parquet(self._required_uri("label_uri"))
@@ -163,7 +164,7 @@ class CompanyAShareDataSource:
 
         required = {
             "行情": set(IDENTITY_COLUMNS + MARKET_COLUMNS[:5]),
-            "状态": set(IDENTITY_COLUMNS + MASK_COLUMNS),
+            "状态": set(IDENTITY_COLUMNS + MASK_COLUMNS + EXECUTION_STATE_COLUMNS),
             "标签": set(IDENTITY_COLUMNS + LABEL_COLUMNS),
         }
         tables = {"行情": market, "状态": state, "标签": label}
@@ -185,7 +186,7 @@ class CompanyAShareDataSource:
                     FailureCode.STATE_COVERAGE_INCOMPLETE,
                     "A 股扩展状态列必须全部提供或全部省略",
                 )
-            for column in (*optional_state, *MASK_COLUMNS):
+            for column in (*optional_state, *MASK_COLUMNS, *EXECUTION_STATE_COLUMNS):
                 if table.schema.get(column) != pl.Boolean:
                     raise self._error(
                         FailureCode.STATE_COVERAGE_INCOMPLETE,
@@ -410,7 +411,7 @@ class CompanyAShareFactorInputSource:
         state = (
             pl.scan_parquet(self._required_uri("state_uri"))
             .filter(pl.col("date").is_between(lower_bound, request.end, closed="both"))
-            .select([*IDENTITY_COLUMNS, *MASK_COLUMNS])
+            .select([*IDENTITY_COLUMNS, *MASK_COLUMNS, *EXECUTION_STATE_COLUMNS])
         )
         frame = market.join(
             state,
@@ -443,7 +444,7 @@ class CompanyAShareFactorInputSource:
         """验证 market/state 标准列、日期和 Boolean mask 类型。"""
 
         missing_market = set(IDENTITY_COLUMNS + MARKET_COLUMNS[:5]) - set(market.columns)
-        missing_state = set(IDENTITY_COLUMNS + MASK_COLUMNS) - set(
+        missing_state = set(IDENTITY_COLUMNS + MASK_COLUMNS + EXECUTION_STATE_COLUMNS) - set(
             state.columns
         )
         if missing_market or missing_state:
@@ -459,7 +460,7 @@ class CompanyAShareFactorInputSource:
                 FailureCode.STATE_COVERAGE_INCOMPLETE,
                 "A 股扩展状态列必须全部提供或全部省略",
             )
-        for column in (*optional_state, *MASK_COLUMNS):
+        for column in (*optional_state, *MASK_COLUMNS, *EXECUTION_STATE_COLUMNS):
             if state.schema.get(column) != pl.Boolean:
                 raise self._error(
                     FailureCode.STATE_COVERAGE_INCOMPLETE,
@@ -570,7 +571,7 @@ class CompanyAShareOutcomeSource:
         return (
             pl.scan_parquet(self._required_label_uri())
             .filter(pl.col("date").is_between(request.start, request.end, closed="both"))
-            .select([*IDENTITY_COLUMNS, self._policy.label_column])
+            .select([*IDENTITY_COLUMNS, *LABEL_COLUMNS])
             .sort(list(IDENTITY_COLUMNS))
         )
 

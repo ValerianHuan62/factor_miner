@@ -3040,7 +3040,7 @@ def validate_spec(spec_path: Path = typer.Argument(..., help="CandidateFactorSpe
         payload = _read_json(spec_path)
         candidate = (
             TrustedCandidateFactorSpec.model_validate(payload)
-            if payload.get("spec_version") == "2"
+            if payload.get("spec_version") in {"2", "3"}
             else CandidateFactorSpec.model_validate(payload)
         )
         _print_json(candidate.model_dump(mode="json"))
@@ -3059,7 +3059,7 @@ def register_candidate_command(
         payload = _read_json(spec_path)
         candidate = (
             registered_trusted_candidate(TrustedCandidateFactorSpec.model_validate(payload))
-            if payload.get("spec_version") == "2"
+            if payload.get("spec_version") in {"2", "3"}
             else registered_candidate(CandidateFactorSpec.model_validate(payload))
         )
         ledger = JsonlLedger(artifact_root)
@@ -3231,13 +3231,13 @@ def compile_spec(
         if "candidate_id" in payload:
             candidate = (
                 RegisteredTrustedCandidate.model_validate(payload)
-                if payload.get("spec", {}).get("spec_version") == "2"
+                if payload.get("spec", {}).get("spec_version") in {"2", "3"}
                 else RegisteredCandidate.model_validate(payload)
             )
         else:
             candidate = (
                 registered_trusted_candidate(TrustedCandidateFactorSpec.model_validate(payload))
-                if payload.get("spec_version") == "2"
+                if payload.get("spec_version") in {"2", "3"}
                 else registered_candidate(CandidateFactorSpec.model_validate(payload))
             )
         plan = compile_candidate(
@@ -3273,6 +3273,405 @@ def run_visible(
     try:
         result = _run_registered_campaign(campaign_id_value, env_file, visible=True)
         _print_json(result.model_dump(mode="json"))
+    except Exception as error:
+        _fail(error)
+
+
+@app.command("register-favor")
+def register_favor_command(config_path: Path, output_root: Path,
+                           legacy_replay: bool = typer.Option(False, help="仅复现旧合同，不作为新增研究入口")) -> None:
+    """事前冻结跨市场假设、观察条件、Γ、数据发布和有限预算。"""
+    from factor_miner.favor_workflow import register_favor
+    try:
+        _print_json({"status": "registered", "root": str(register_favor(config_path, output_root, legacy_replay=legacy_replay))})
+    except Exception as error:
+        _fail(error)
+
+
+@app.command("publish-observation-overlay")
+def publish_observation_overlay_command(config_path: Path) -> None:
+    """将同日Nasdaq交易笔数接入独立研究发布，保留原成交规则。"""
+    from factor_miner.local_data import publish_observation_overlay
+    try:
+        _print_json({"status":"completed","root":str(publish_observation_overlay(config_path))})
+    except Exception as error:
+        _fail(error)
+
+
+@app.command("repair-favor-terminals")
+def repair_favor_terminals_command(failed_root: Path, recovery_root: Path, output_root: Path) -> None:
+    """保留原试验和失败链，仅修正终止结算输入并准备独立重放。"""
+    from factor_miner.favor_workflow import repair_favor_terminals
+    try:
+        _print_json({"status":"registered","root":str(repair_favor_terminals(failed_root,recovery_root,output_root))})
+    except Exception as error:
+        _fail(error)
+
+
+@app.command("publish-terminal-recoveries")
+def publish_terminal_recoveries_command(config_path: Path) -> None:
+    """将已核实终止依据换算为持仓价格单位，未知事件独立保留。"""
+    from factor_miner.local_data import publish_terminal_recoveries
+    try:
+        _print_json({"status":"completed","root":str(publish_terminal_recoveries(config_path))})
+    except Exception as error:
+        _fail(error)
+
+
+@app.command("build-cash-observation-prototype")
+def build_cash_observation_prototype_command(config_path: Path) -> None:
+    """构建普通收入分配历史观察原型，保留零值与未知，不登记候选。"""
+    from factor_miner.cash_observation import build_cash_observation_prototype
+    try:
+        _print_json({"status":"completed", "root":str(build_cash_observation_prototype(config_path))})
+    except Exception as error:
+        _fail(error)
+
+
+@app.command("run-horizon-diagnostics")
+def run_horizon_diagnostics_command(config_path: Path) -> None:
+    """冻结并诊断既有信号的1/5/20日收益期限，不自动选择期限。"""
+    from factor_miner.horizon_research import run_horizon_diagnostics
+    try:
+        _print_json({"status":"completed", "root":str(run_horizon_diagnostics(config_path))})
+    except Exception as error:
+        _fail(error)
+
+
+@app.command("publish-capitalization-release")
+def publish_capitalization_release_command(config_path: Path) -> None:
+    """将历史每日市值与同单位成交字段接入独立研究发布。"""
+    from factor_miner.capitalization_research import publish_capitalization_release
+    try:
+        _print_json({"status":"completed", "root":str(publish_capitalization_release(config_path))})
+    except Exception as error:
+        _fail(error)
+
+
+@app.command("publish-quote-release")
+def publish_quote_release_command(config_path: Path) -> None:
+    """独立接入显式来源的收盘报价，保留原行情、股票池和标签。"""
+    from factor_miner.quote_research import publish_quote_release
+    try:
+        _print_json({"status":"completed", "root":str(publish_quote_release(config_path))})
+    except Exception as error:
+        _fail(error)
+
+
+@app.command("audit-quote-costs")
+def audit_quote_costs_command(config_path: Path) -> None:
+    """核对既有订单的前日收盘价差，不冒充开盘成交成本回测。"""
+    from factor_miner.quote_research import audit_quote_costs
+    try:
+        _print_json({"status":"completed", "root":str(audit_quote_costs(config_path))})
+    except Exception as error:
+        _fail(error)
+
+
+@app.command("preflight-favor")
+def preflight_favor_command(config_path: Path, output_path: Path,
+                            with_data: bool = typer.Option(False, help="增加发现期覆盖与事件数量提示，不读收益")) -> None:
+    """核对状态测量合同，可选择检查真实数据；不读取收益或登记候选。"""
+    from factor_miner.favor_preflight import preflight_favor
+    try:
+        result = preflight_favor(config_path, output_path, with_data=with_data)
+    except Exception as error:
+        _fail(error)
+        return
+    _print_json(result)
+    if not result["passed"]:
+        raise typer.Exit(code=1)
+
+
+@app.command("favor-demo")
+def favor_demo_command(output_root: Path, market_id: str = typer.Option("us_equity")) -> None:
+    """用合成数据跑通共同验证入口；不调用模型、不连接数据库。"""
+    from factor_miner.favor_demo import make_plan, expressions
+    from factor_miner.favor_workflow import register_favor, favor_generation_payload, submit_favor, run_favor
+    try:
+        output_root.mkdir(parents=True, exist_ok=False)
+        _, config = make_plan(output_root, market_id)
+        root = output_root/"run"
+        register_favor(config, root)
+        for index, producer in enumerate(("deepseek_api", "gpt6")):
+            payload = favor_generation_payload(root, f"F{index+1}", producer)["submission_identity"]
+            receipt = submit_favor(root, {**payload,"expression":expressions()[index].model_dump(mode="json")})
+            if receipt["status"] != "compiled":
+                raise ValueError(receipt["reason"])
+        run_favor(root)
+        _print_json({"status":"completed", "mode":"synthetic_demo", "root":str(root)})
+    except Exception as error:
+        _fail(error)
+
+
+@app.command("favor-schema")
+def favor_schema_command(output_path: Path, protocol: str = typer.Option('exploration', help='exploration、regime 或 legacy')) -> None:
+    """导出完整事前计划 Schema，供 DeepSeek 或 GPT‑6 起草同格式研究合同。"""
+    from factor_miner.favor_schema import FavorPlan, FavorRegimePlan, FavorExplorationPlan
+    from factor_miner.research_report import write_json
+    try:
+        models = {'exploration': FavorExplorationPlan, 'regime': FavorRegimePlan, 'legacy': FavorPlan}
+        if protocol not in models:
+            raise ValueError('未知研究协议')
+        write_json(output_path, models[protocol].model_json_schema())
+        _print_json({"status":"written", "path":str(output_path)})
+    except Exception as error:
+        _fail(error)
+
+
+@app.command("run-favor-cost-review")
+def favor_cost_review_command(config_path: Path) -> None:
+    """复用既有探索信号，按新冻结双边成本复核研究候选资格。"""
+    from factor_miner.favor_cost_review import run_cost_review
+    try:
+        _print_json({'status':'completed','root':str(run_cost_review(config_path))})
+    except Exception as error:
+        _fail(error)
+
+
+@app.command("export-favor-research-candidates")
+def export_favor_research_candidates_command(config_path: Path) -> None:
+    """直接复用事前万14结果导出待确认研究候选，不重跑交易。"""
+    from factor_miner.favor_cost_review import export_exploration_candidates
+    try:
+        _print_json({'status':'completed','root':str(export_exploration_candidates(config_path))})
+    except Exception as error:
+        _fail(error)
+
+
+@app.command("publish-favor-cost-review")
+def publish_favor_cost_review_command(root: Path, dsn_env: str = typer.Option(...)) -> None:
+    """发布通过成本复核的研究候选，保留待确认标签。"""
+    from factor_miner_pg.favor_cost_store import publish_cost_review
+    try:
+        _print_json(publish_cost_review(root, os.environ[dsn_env]))
+    except Exception as error:
+        _fail(error)
+
+
+@app.command("favor-request")
+def favor_request_command(root: Path, trial_id: str, output_path: Path,
+                          producer: str = typer.Option("gpt6", help="gpt6 或 deepseek_api")) -> None:
+    """生成两个入口共用的合同请求；DeepSeek 复用 llm-execute 的授权与录制。"""
+    from factor_miner.favor_workflow import favor_generation_payload, prepare_favor_deepseek
+    from factor_miner.research_report import write_json
+    try:
+        if producer == "deepseek_api":
+            prepare_favor_deepseek(root, trial_id, output_path)
+        elif producer == "gpt6":
+            write_json(output_path, favor_generation_payload(root, trial_id, producer))
+        else:
+            raise ValueError("producer 只允许 gpt6 或 deepseek_api")
+        _print_json({"status": "prepared", "path": str(output_path)})
+    except Exception as error:
+        _fail(error)
+
+
+@app.command("submit-favor")
+def submit_favor_command(root: Path, submission_path: Path) -> None:
+    """接收 GPT‑6 或 DeepSeek 的同格式提交，执行同一 Γ 校验，失败不释放名额。"""
+    from factor_miner.favor_workflow import submit_favor
+    try:
+        receipt = submit_favor(root, _read_json(submission_path))
+        _print_json(receipt)
+        if receipt["status"] != "compiled":
+            raise typer.Exit(code=1)
+    except typer.Exit:
+        raise
+    except Exception as error:
+        _fail(error)
+
+
+@app.command("import-favor-response")
+def import_favor_response_command(root: Path, record_directory: Path) -> None:
+    """验证已录制 DeepSeek 响应归属，然后进入共同提交入口。"""
+    from factor_miner.favor_workflow import submit_favor, favor_generation_payload
+    try:
+        response = replay_recorded_call(record_directory)
+        payload = response.content_json
+        if payload is None or payload.get("producer") != "deepseek_api":
+            raise ValueError("录制响应不是 DeepSeek 因子提交")
+        expected = favor_generation_payload(root, payload["trial_id"], "deepseek_api")
+        if response.record.campaign_id != "favor_"+expected["submission_identity"]["plan_sha256"][:24]:
+            raise ValueError("DeepSeek 响应属于另一冻结计划")
+        if tuple(response.record.slot_ids) != (payload["trial_id"],):
+            raise ValueError("DeepSeek 响应候选槽不符")
+        receipt = submit_favor(root, payload)
+        _print_json(receipt)
+        if receipt["status"] != "compiled":
+            raise typer.Exit(code=1)
+    except typer.Exit:
+        raise
+    except Exception as error:
+        _fail(error)
+
+
+@app.command("run-favor")
+def run_favor_command(root: Path) -> None:
+    """封存候选，执行构念、三档联合触发、验证期阈值选择和测试期因果回测。"""
+    from factor_miner.favor_workflow import run_favor
+    try:
+        _print_json({"status": "completed", "root": str(run_favor(root))})
+    except Exception as error:
+        _fail(error)
+
+
+@app.command("publish-favor")
+def publish_favor_command(root: Path, dsn_env: str = typer.Option(..., help="目标 PostgreSQL DSN 所在环境变量名称")) -> None:
+    """只投影通过联合筛选的因子与组合，其他候选仅存试验索引。"""
+    from factor_miner_pg.favor_store import publish_favor
+    try:
+        dsn = os.environ.get(dsn_env)
+        if not dsn:
+            raise ValueError("指定环境变量没有数据库连接配置")
+        _print_json(publish_favor(root, dsn))
+    except Exception as error:
+        _fail(error)
+
+
+@app.command("run-research-report")
+def run_research_report(config_path: Path = typer.Argument(..., help="冻结研究报告配置 JSON")) -> None:
+    """完成构念、发现确认与允许未确定持仓的报告流程，不伪造正式收益。"""
+    from factor_miner.research_report import run_report
+    try:
+        root = run_report(config_path)
+        _print_json({"status": "completed", "report_root": str(root)})
+    except Exception as error:
+        _fail(error)
+
+
+@app.command("run-research-pool")
+def run_research_pool_command(config_path: Path = typer.Argument(..., help="冻结的全历史组合研究复核配置")) -> None:
+    """分离单因子结论与组合研究资格，对有效代表查重。"""
+    from factor_miner.research_pool import run_research_pool
+    try:
+        root = run_research_pool(config_path)
+        _print_json({"status": "completed", "report_root": str(root)})
+    except Exception as error:
+        _fail(error)
+
+
+@app.command("validate-search-budget")
+def validate_search_budget_command(config_path: Path = typer.Argument(..., help="有限机制预算及全部已登记尝试")) -> None:
+    """校验机制与数据来源配额，不因新建批次重置预算。"""
+    from factor_miner.research_pool import validate_search_budget, check_resource_usage
+    try:
+        payload = _read_json(config_path)
+        result = validate_search_budget(payload['plan'], payload['proposals'])
+        if 'usage' in payload:
+            result['resources'] = check_resource_usage(payload['plan'], payload['usage'])
+        _print_json(result)
+    except Exception as error:
+        _fail(error)
+        return
+    if 'resources' in result and not result['resources']['may_continue']:
+        raise typer.Exit(code=1)
+
+
+@app.command("run-eight-factor-study")
+def run_eight_factor_study_command(config_path: Path = typer.Argument(..., help="冻结的八因子归因与有限策略诊断配置")) -> None:
+    """核对收益来源、有限风格控制和执行成本，不重新选择历史因子。"""
+    from factor_miner.eight_factor_study import run_eight_factor_study
+    try:
+        root = run_eight_factor_study(config_path)
+        _print_json({"status": "completed", "report_root": str(root)})
+    except Exception as error:
+        _fail(error)
+
+
+@app.command("run-weekly-target-study")
+def run_weekly_target_study_command(config_path: Path) -> None:
+    """复用冻结分数比较每周目标差额交易与固定窗口执行。"""
+    from factor_miner.weekly_target_study import run_weekly_target_study
+    try:
+        _print_json({"status": "completed", "root": str(run_weekly_target_study(config_path))})
+    except Exception as error:
+        _fail(error)
+
+
+@app.command("run-monthly-target-execution")
+def run_monthly_target_execution_command(config_path: Path) -> None:
+    """复用冻结预测，执行一次已预约成本情景的月末目标差额交易。"""
+    from factor_miner.monthly_target_execution import run_monthly_target_execution
+    try:
+        _print_json({"status": "completed", "root": str(run_monthly_target_execution(config_path))})
+    except Exception as error:
+        _fail(error)
+
+
+@app.command("run-execution-study")
+def run_execution_study_command(config_path: Path = typer.Argument(..., help="冻结的持有周期、起始相位与成本诊断配置")) -> None:
+    """复用既有分数执行有限稳健性比较，不改动纸面跟踪策略。"""
+    from factor_miner.execution_study import run_execution_study
+    try:
+        root = run_execution_study(config_path)
+        _print_json({"status": "completed", "report_root": str(root)})
+    except Exception as error:
+        _fail(error)
+
+
+@app.command("run-ridge-strategy")
+def run_ridge_strategy_command(config_path: Path = typer.Argument(..., help="冻结的既有因子联合岭回归配置")) -> None:
+    """运行带标签事件 purge 的走步岭回归，复用因子因果组合回测。"""
+    from factor_miner.ridge_strategy import run_ridge_strategy
+    try:
+        root = run_ridge_strategy(config_path)
+        _print_json({"status": "completed", "report_root": str(root)})
+    except Exception as error:
+        _fail(error)
+
+
+@app.command("run-horizon-models")
+def run_horizon_models_command(config_path: Path = typer.Argument(..., help="固定周度采样的多期限组合对照配置")) -> None:
+    """比较预测期限与组合贡献，不自动改变调仓协议或候选资格。"""
+    from factor_miner.horizon_models import run_horizon_models
+    try:
+        root = run_horizon_models(config_path)
+        _print_json({"status": "completed", "report_root": str(root)})
+    except Exception as error:
+        _fail(error)
+
+
+@app.command("publish-industry-release")
+def publish_industry_release_command(config_path: Path = typer.Argument(..., help="历史行业与同业收益独立发布配置")) -> None:
+    """排除自身发行人、使用前一市场日权重，保留基础面板与标签。"""
+    from factor_miner.industry_research import publish_industry_release
+    try:
+        root = publish_industry_release(config_path)
+        _print_json({"status": "completed", "report_root": str(root)})
+    except Exception as error:
+        _fail(error)
+
+
+@app.command("publish-share-observation-release")
+def publish_share_observation_release_command(config_path: Path = typer.Argument(..., help="冻结股份乘数、预热历史与输入身份的发布配置")) -> None:
+    """发布股份原始观察，不计算候选收益或改变原有股票池。"""
+    from factor_miner.share_observation import publish_share_observation_release
+    try:
+        root = publish_share_observation_release(config_path)
+        _print_json({"status": "completed", "report_root": str(root)})
+    except Exception as error:
+        _fail(error)
+
+
+@app.command("run-reserved-factor-models")
+def run_reserved_factor_models_command(config_path: Path = typer.Argument(..., help="结果前已冻结的增量模型与比较合同")) -> None:
+    """保留弱IC信号的组合对照资格，构念失败分支不补位。"""
+    from factor_miner.reserved_factor_models import run_reserved_factor_models
+    try:
+        root = run_reserved_factor_models(config_path)
+        _print_json({"status": "completed", "report_root": str(root)})
+    except Exception as error:
+        _fail(error)
+
+
+@app.command("run-incremental-report")
+def run_incremental_report(config_path: Path = typer.Argument(..., help="已冻结且主报告完成的研究配置")) -> None:
+    """对发现期候选执行固定历史基底上的因果滚动增量诊断。"""
+    from factor_miner.research_incremental import run_incremental
+    try:
+        root = run_incremental(config_path)
+        _print_json({"status": "completed", "report_root": str(root)})
     except Exception as error:
         _fail(error)
 
@@ -3690,6 +4089,26 @@ def barra_fetch_ricequant_command(
             provider.close()
 
 
+@research_app.command("start")
+def research_start_command(
+    artifact_root: Path = typer.Option(..., "--artifact-root"),
+    requested_at: str = typer.Option(..., "--requested-at"),
+) -> None:
+    """登记一个待启动批次；同一次点击复用命令，后台消费后才开始研究。"""
+
+    try:
+        from factor_miner.autonomous_schema import ResearchCommand
+        from factor_miner.research_control import ResearchControlStore
+
+        command = ResearchCommand.start(
+            requested_by="research_owner", requested_at=datetime.fromisoformat(requested_at),
+        )
+        ResearchControlStore(artifact_root).submit(command)
+        _print_json({"status": "queued", "command_id": command.command_id})
+    except Exception as error:
+        _fail(error)
+
+
 @research_app.command("worker")
 def research_worker_command(
     config: Path = typer.Option(..., "--config", help="服务器自主研究配置 JSON。"),
@@ -3880,6 +4299,413 @@ def screening_build_command(
         _fail(error)
 
 
+@screening_app.command("rebuild-open-panel")
+def screening_rebuild_open_panel_command(
+    feature_panel: Path = typer.Option(..., "--feature-panel", help="已有周频特征 Parquet。"),
+    market: list[Path] = typer.Option(..., "--market", help="可重复提供的行情 Parquet。"),
+    state: Path = typer.Option(..., "--state", help="显式可交易状态 Parquet。"),
+    output: Path = typer.Option(..., "--output", help="新的 open-to-open 周频面板。"),
+    market_date_column: str = typer.Option("date", "--market-date-column"),
+    market_asset_column: str = typer.Option("code", "--market-asset-column"),
+    market_open_column: str = typer.Option("adj_open", "--market-open-column"),
+    state_date_column: str = typer.Option("trade_date", "--state-date-column"),
+    state_asset_column: str = typer.Option("code", "--state-asset-column"),
+    tradable_column: str = typer.Option("valid_for_trading", "--tradable-column"),
+) -> None:
+    """按未来第 1 和第 6 个可交易日复权开盘价重建标签。"""
+
+    try:
+        from factor_miner.screening_panel import rebuild_open_label_panel
+
+        result = rebuild_open_label_panel(
+            feature_panel=feature_panel,
+            market_paths=tuple(market),
+            state_path=state,
+            output_path=output,
+            market_date_column=market_date_column,
+            market_asset_column=market_asset_column,
+            market_open_column=market_open_column,
+            state_date_column=state_date_column,
+            state_asset_column=state_asset_column,
+            tradable_column=tradable_column,
+        )
+        _print_json(result)
+    except Exception as error:
+        _fail(error)
+
+
+@screening_app.command("rebuild-open-batches")
+def screening_rebuild_open_batches_command(
+    feature_root: Path = typer.Option(..., "--feature-root", help="含 weekly_factor_features_*.parquet 的目录。"),
+    market: list[Path] = typer.Option(..., "--market", help="可重复提供的行情 Parquet。"),
+    state: Path = typer.Option(..., "--state", help="显式可交易状态 Parquet。"),
+) -> None:
+    """为分批周频特征逐个构建 open-to-open 标签面板。"""
+
+    try:
+        from factor_miner.screening_panel import rebuild_open_label_panel
+
+        paths = tuple(sorted(feature_root.glob("weekly_factor_features_*.parquet")))
+        if not paths:
+            raise ValueError("分批目录没有 weekly_factor_features_*.parquet")
+        outputs = []
+        for path in paths:
+            output = path.with_name(path.stem + "_open.parquet")
+            result = rebuild_open_label_panel(
+                feature_panel=path,
+                market_paths=tuple(market),
+                state_path=state,
+                output_path=output,
+            )
+            outputs.append({"input": path.name, "output": output.name, "output_sha256": result["output_sha256"]})
+        _print_json({"version": "screening-open-batches-v1", "batch_count": len(outputs), "outputs": outputs})
+    except Exception as error:
+        _fail(error)
+
+
+@screening_app.command("build-factor-panel")
+def screening_build_factor_panel_command(
+    candidates: Path = typer.Option(..., "--candidates", help="含候选身份与冻结方向的 CSV。"),
+    artifact_root: Path = typer.Option(..., "--artifact-root", help="不可变 Factor Miner 产物根。"),
+    schedule_panel: Path = typer.Option(..., "--schedule-panel", help="只提供周频信号日期的面板。"),
+    market: list[Path] = typer.Option(..., "--market", help="可重复的复权行情分区。"),
+    state: Path = typer.Option(..., "--state", help="显式因子计算状态表。"),
+    output_root: Path = typer.Option(..., "--output-root", help="新的因子面板目录。"),
+    batch_size: int = typer.Option(50, "--batch-size", min=1, help="每批候选数，限制峰值内存。"),
+    selection: Path | None = typer.Option(None, "--selection", help="可选的含 business_id 的筛选后清单。"),
+    development_start: str | None = typer.Option(None, "--development-start", help="可选日频去重区间开始。"),
+    development_end: str | None = typer.Option(None, "--development-end", help="可选日频去重区间结束。"),
+) -> None:
+    """从不可变候选 Spec 构建全量日频与周频筛选特征。"""
+
+    try:
+        from factor_miner.screening_factor_panel import build_factor_screening_panel
+
+        _print_json(build_factor_screening_panel(
+            candidates_path=candidates,
+            artifact_root=artifact_root,
+            schedule_panel=schedule_panel,
+            market_paths=tuple(market),
+            state_path=state,
+            output_root=output_root,
+            batch_size=batch_size,
+            selection_path=selection,
+            development_start=date.fromisoformat(development_start) if development_start else None,
+            development_end=date.fromisoformat(development_end) if development_end else None,
+        ))
+    except Exception as error:
+        _fail(error)
+
+
+@screening_app.command("build-quantlake-panel")
+def screening_build_quantlake_panel_command(
+    factor: list[Path] = typer.Option(..., "--factor", help="可重复提供的 QuantLake cross_section_factor 分区。"),
+    label_panel: Path = typer.Option(..., "--label-panel", help="既有 open-to-open 标签面板。"),
+    output_root: Path = typer.Option(..., "--output-root", help="新的 QuantLake 筛选面板目录。"),
+    batch_size: int = typer.Option(30, "--batch-size", min=1, help="每批因子数，限制峰值内存。"),
+) -> None:
+    """将 QuantLake 截面因子宽表转换为固定筛选面板。"""
+
+    try:
+        from factor_miner.quantlake_screening import build_quantlake_screening_batches
+
+        _print_json(
+            build_quantlake_screening_batches(
+                factor_paths=tuple(factor),
+                label_panel=label_panel,
+                output_root=output_root,
+                batch_size=batch_size,
+            )
+        )
+    except Exception as error:
+        _fail(error)
+
+
+@screening_app.command("build-quantlake-selected-daily")
+def screening_build_quantlake_selected_daily_command(
+    factor: list[Path] = typer.Option(..., "--factor", help="可重复提供的 QuantLake cross_section_factor 分区。"),
+    selected: Path = typer.Option(..., "--selected", help="固定门槛通过候选 CSV。"),
+    direction_catalog: Path = typer.Option(..., "--direction-catalog", help="发现期冻结方向目录。"),
+    output_root: Path = typer.Option(..., "--output-root", help="新的日频聚类面板目录。"),
+    batch_size: int = typer.Option(30, "--batch-size", min=1),
+) -> None:
+    """只为已通过门槛的 QuantLake 因子构建日频聚类面板。"""
+
+    try:
+        from factor_miner.quantlake_screening import build_quantlake_selected_daily_panels
+
+        _print_json(
+            build_quantlake_selected_daily_panels(
+                factor_paths=tuple(factor),
+                selected_path=selected,
+                direction_catalog=direction_catalog,
+                output_root=output_root,
+                batch_size=batch_size,
+            )
+        )
+    except Exception as error:
+        _fail(error)
+
+
+@screening_app.command("merge-features")
+def screening_merge_features_command(
+    panel: Path = typer.Option(..., "--panel", help="open-to-open 主面板。"),
+    source: Path = typer.Option(..., "--source", help="按 date/code 对齐的特征来源面板。"),
+    prefix: list[str] = typer.Option(..., "--prefix", help="可重复的特征列前缀。"),
+    output: Path = typer.Option(..., "--output", help="新的合并面板 Parquet。"),
+) -> None:
+    """把显式前缀的基准特征合并进 open 标签面板。"""
+
+    try:
+        from factor_miner.screening_panel import merge_feature_columns
+
+        _print_json(
+            merge_feature_columns(
+                panel_path=panel,
+                source_path=source,
+                prefixes=tuple(prefix),
+                output_path=output,
+            )
+        )
+    except Exception as error:
+        _fail(error)
+
+
+@screening_app.command("rolling-ridge")
+def screening_rolling_ridge_command(
+    panel: Path = typer.Option(..., "--panel", help="open-to-open 周频面板。"),
+    output_root: Path = typer.Option(..., "--output-root", help="新的 Ridge 产物目录。"),
+    feature_prefix: list[str] = typer.Option([], "--feature-prefix", help="可重复的特征列前缀。"),
+    candidate_list: Path | None = typer.Option(None, "--candidate-list", help="含 business_id 的候选 CSV。"),
+    evaluation_start: str | None = typer.Option(None, "--evaluation-start", help="YYYY-MM-DD。"),
+    evaluation_end: str | None = typer.Option(None, "--evaluation-end", help="YYYY-MM-DD。"),
+) -> None:
+    """运行标准 156/26/4 周滚动 Ridge 与 Top50 等权评价。"""
+
+    try:
+        import csv
+        import polars as pl
+        from factor_miner.rolling_ridge import run_and_publish_rolling_ridge
+
+        names = pl.scan_parquet(panel).collect_schema().names()
+        features = {name for name in names if any(name.startswith(prefix) for prefix in feature_prefix)}
+        if candidate_list is not None:
+            with candidate_list.open(encoding="utf-8-sig", newline="") as handle:
+                for row in csv.DictReader(handle):
+                    business_id = (row.get("business_id") or "").strip()
+                    if not business_id:
+                        raise ValueError("候选清单缺少 business_id")
+                    features.update({f"fm_{business_id}__mean5", f"fm_{business_id}__last"})
+        missing = sorted(features.difference(names))
+        if missing:
+            raise ValueError(f"面板缺少候选特征：{missing}")
+        result = run_and_publish_rolling_ridge(
+            panel_path=panel,
+            features=sorted(features),
+            output_root=output_root,
+            evaluation_start=date.fromisoformat(evaluation_start) if evaluation_start else None,
+            evaluation_end=date.fromisoformat(evaluation_end) if evaluation_end else None,
+        )
+        _print_json(result)
+    except Exception as error:
+        _fail(error)
+
+
+@screening_app.command("screen-single-factors")
+def screening_single_factor_command(
+    panel: Path = typer.Option(..., "--panel", help="open-to-open 周频面板。"),
+    candidate_list: Path = typer.Option(..., "--candidate-list", help="含 business_id 的候选 CSV。"),
+    output_root: Path = typer.Option(..., "--output-root", help="新的单因子筛选产物目录。"),
+    family_size: int = typer.Option(367, "--family-size", min=1),
+) -> None:
+    """按固定 IC、RankIC、HAC、确认期和成本门槛筛选单因子。"""
+
+    try:
+        import csv
+        from hashlib import sha256
+        import polars as pl
+        from factor_miner.single_factor_screening import screen_single_factors
+
+        root = output_root.expanduser().resolve(strict=False)
+        if root.exists():
+            raise ValueError("单因子筛选输出目录已存在，请使用新的路径")
+        with candidate_list.open(encoding="utf-8-sig", newline="") as handle:
+            ids = tuple((row.get("business_id") or "").strip() for row in csv.DictReader(handle))
+        if not ids or any(not item for item in ids) or len(set(ids)) != len(ids):
+            raise ValueError("候选清单 business_id 为空或重复")
+        result = screen_single_factors(pl.read_parquet(panel), ids, family_size=family_size)
+        root.mkdir(parents=True)
+        detail = root / "单因子固定门槛判定.csv"
+        result.write_csv(detail, include_bom=True)
+        statistical = result.filter(pl.col("final_status").is_in(["统计候选", "统计与经济候选"]))
+        economic = result.filter(pl.col("final_status") == "统计与经济候选")
+        selected_path = root / "统计候选.csv"
+        economic_path = root / "统计与经济候选.csv"
+        statistical.write_csv(selected_path, include_bom=True)
+        economic.write_csv(economic_path, include_bom=True)
+        summary = {
+            "version": "single-factor-screening-v1",
+            "candidate_count": len(ids),
+            "statistical_candidate_count": statistical.height,
+            "statistical_and_economic_count": economic.height,
+            "family_size": family_size,
+            "research_boundary": "统计候选进入相关性与模型增量研究；经济门槛是警告，不在此层删除",
+            "detail_sha256": sha256(detail.read_bytes()).hexdigest(),
+            "selected_sha256": sha256(selected_path.read_bytes()).hexdigest(),
+            "economic_selected_sha256": sha256(economic_path.read_bytes()).hexdigest(),
+        }
+        (root / "摘要.json").write_bytes(canonical_json_bytes(summary))
+        _print_json(summary)
+    except Exception as error:
+        _fail(error)
+
+
+@screening_app.command("combine-single-factor-batches")
+def screening_combine_single_factor_batches_command(
+    batch_root: Path = typer.Option(..., "--batch-root", help="含 single_fixed_* 目录的批次根。"),
+    output_root: Path = typer.Option(..., "--output-root", help="新的全量单因子判定目录。"),
+    family_size: int = typer.Option(367, "--family-size", min=1, help="冻结检验族总数。"),
+) -> None:
+    """合并分批单因子结果并保持每个候选唯一。"""
+
+    try:
+        from hashlib import sha256
+        import polars as pl
+
+        roots = sorted(path for path in batch_root.glob("single_fixed_*") if path.is_dir())
+        if not roots:
+            raise ValueError("没有找到 single_fixed_* 批次目录")
+        detail = pl.concat([pl.read_csv(path / "单因子固定门槛判定.csv", encoding="utf8-lossy") for path in roots])
+        if detail.get_column("business_id").n_unique() != detail.height:
+            raise ValueError("分批结果 business_id 重复")
+        if detail.height > family_size:
+            raise ValueError("分批结果数量超过冻结检验族")
+        selected = detail.filter(pl.col("final_status").is_in(["统计候选", "统计与经济候选"]))
+        economic = detail.filter(pl.col("final_status") == "统计与经济候选")
+        output_root = output_root.expanduser().resolve(strict=False)
+        if output_root.exists():
+            raise ValueError("全量合并输出目录已存在")
+        output_root.mkdir(parents=True)
+        detail_path = output_root / f"{detail.height}个可审计候选固定门槛判定.csv"
+        selected_path = output_root / "统计门槛通过候选.csv"
+        economic_path = output_root / "统计与经济门槛均通过候选.csv"
+        detail.write_csv(detail_path, include_bom=True)
+        selected.write_csv(selected_path, include_bom=True)
+        economic.write_csv(economic_path, include_bom=True)
+        summary = {
+            "version": "single-factor-screening-combined-v1",
+            "auditable_candidate_count": detail.height,
+            "family_size": family_size,
+            "unavailable_candidate_count": family_size - detail.height,
+            "statistical_candidate_count": selected.height,
+            "statistical_and_economic_count": economic.height,
+            "detail_sha256": sha256(detail_path.read_bytes()).hexdigest(),
+            "selected_sha256": sha256(selected_path.read_bytes()).hexdigest(),
+            "economic_selected_sha256": sha256(economic_path.read_bytes()).hexdigest(),
+        }
+        (output_root / "摘要.json").write_bytes(canonical_json_bytes(summary))
+        _print_json(summary)
+    except Exception as error:
+        _fail(error)
+
+
+@screening_app.command("deduplicate-fixed")
+def screening_deduplicate_fixed_command(
+    screened: Path = typer.Option(..., "--screened", help="固定单因子门槛判定 CSV。"),
+    clusters: Path = typer.Option(..., "--clusters", help="冻结相关簇判定 CSV。"),
+    catalog: Path | None = typer.Option(None, "--catalog", help="可选的含公式与假设的候选目录 CSV。"),
+    output_root: Path = typer.Option(..., "--output-root", help="新的非冗余候选产物目录。"),
+) -> None:
+    """按冻结字典序从每个 0.75 相关簇选择一个代表。"""
+
+    try:
+        from hashlib import sha256
+        import polars as pl
+        from factor_miner.screening_deduplication import select_cluster_representatives
+
+        root = output_root.expanduser().resolve(strict=False)
+        if root.exists():
+            raise ValueError("去重输出目录已存在，请使用新的路径")
+        representatives, ranked = select_cluster_representatives(
+            pl.read_csv(screened, encoding="utf8-lossy"),
+            pl.read_csv(clusters, encoding="utf8-lossy"),
+        )
+        if catalog is not None:
+            catalog_frame = pl.read_csv(catalog, encoding="utf8-lossy")
+            columns = [name for name in ("business_id", "candidate_id", "hypothesis", "formula", "selected_direction") if name in catalog_frame.columns]
+            if "business_id" not in columns:
+                raise ValueError("候选目录缺少 business_id")
+            catalog_view = catalog_frame.select(columns).unique("business_id")
+            representatives = representatives.join(catalog_view, on="business_id", how="left", validate="1:1")
+            ranked = ranked.join(catalog_view, on="business_id", how="left", validate="1:1")
+        root.mkdir(parents=True)
+        representatives_path = root / "非冗余候选.csv"
+        ranked_path = root / "簇内全量排序.csv"
+        representatives.write_csv(representatives_path, include_bom=True)
+        ranked.write_csv(ranked_path, include_bom=True)
+        summary = {
+            "version": "fixed-screening-deduplication-v1",
+            "eligible_count": ranked.height,
+            "cluster_count": representatives.height,
+            "representatives_sha256": sha256(representatives_path.read_bytes()).hexdigest(),
+            "ranked_sha256": sha256(ranked_path.read_bytes()).hexdigest(),
+        }
+        (root / "摘要.json").write_bytes(canonical_json_bytes(summary))
+        _print_json(summary)
+    except Exception as error:
+        _fail(error)
+
+
+@screening_app.command("cluster-fixed")
+def screening_cluster_fixed_command(
+    screened: Path = typer.Option(..., "--screened", help="全量固定门槛通过候选 CSV。"),
+    daily_panel: list[Path] = typer.Option(..., "--daily-panel", help="可重复的日频因子批次。"),
+    output_root: Path = typer.Option(..., "--output-root", help="新的相关聚类产物目录。"),
+) -> None:
+    """按逐日截面 Pearson/Spearman 与 0.75 complete linkage 去重。"""
+
+    try:
+        from hashlib import sha256
+        import polars as pl
+        from factor_miner.screening_clustering import cluster_daily_factors
+        from factor_miner.screening_deduplication import select_cluster_representatives
+
+        screened_frame = pl.read_csv(screened, encoding="utf8-lossy")
+        ids = tuple(screened_frame.get_column("business_id").to_list())
+        mapping, pearson, spearman = cluster_daily_factors(
+            tuple(pl.scan_parquet(path) for path in daily_panel), ids
+        )
+        representatives, ranked = select_cluster_representatives(screened_frame, mapping)
+        root = output_root.expanduser().resolve(strict=False)
+        if root.exists():
+            raise ValueError("聚类输出目录已存在")
+        root.mkdir(parents=True)
+        outputs = {
+            "相关簇.csv": mapping,
+            "Pearson相关矩阵.csv": pearson,
+            "Spearman相关矩阵.csv": spearman,
+            "非冗余候选.csv": representatives,
+            "簇内全量排序.csv": ranked,
+        }
+        hashes = {}
+        for name, frame in outputs.items():
+            path = root / name
+            frame.write_csv(path, include_bom=True)
+            hashes[name] = sha256(path.read_bytes()).hexdigest()
+        summary = {
+            "version": "fixed-screening-clustering-v1",
+            "eligible_count": len(ids),
+            "cluster_count": representatives.height,
+            "similarity_threshold": 0.75,
+            "linkage": "complete",
+            "hashes": hashes,
+        }
+        (root / "摘要.json").write_bytes(canonical_json_bytes(summary))
+        _print_json(summary)
+    except Exception as error:
+        _fail(error)
+
+
 def _environment(env_file: Path | None) -> dict[str, str]:
     """合并私有配置文件和当前环境变量。"""
 
@@ -3930,6 +4756,85 @@ def _fail(error: Exception) -> None:
     raise typer.Exit(code=1)
 
 
+
+@app.command("publish-mapped-history")
+def publish_mapped_history_command(config_path: Path) -> None:
+    """从显式列映射、状态和日历发布独立历史数据，不修改上游。"""
+    from factor_miner.local_data import publish_mapped_history
+    try:
+        _print_json({'status': 'completed', 'root': str(publish_mapped_history(config_path))})
+    except Exception as error:
+        _fail(error)
+
+
+@app.command("run-training-window-study")
+def run_training_window_study_command(config_path: Path) -> None:
+    """固定既有信号，比较三年与十年历史训练长度。"""
+    from factor_miner.horizon_models import run_training_window_study
+    try:
+        _print_json({'status': 'completed', 'root': str(run_training_window_study(config_path))})
+    except Exception as error:
+        _fail(error)
+
+
+@app.command("run-state-hypothesis-pilot")
+def run_state_hypothesis_pilot_command(config_path: Path) -> None:
+    """仅运行事前冻结的单因子状态比较，不发布或改变默认筛选。"""
+    from factor_miner.state_hypothesis_pilot import run_state_hypothesis_pilot
+    try:
+        _print_json({'status': 'completed', 'root': str(run_state_hypothesis_pilot(config_path))})
+    except Exception as error:
+        _fail(error)
+
+
+@app.command("run-state-hypothesis-batch")
+def run_state_hypothesis_batch_command(config_path: Path) -> None:
+    """运行至少十个既有因子的冻结状态假设与条件组合比较。"""
+    from factor_miner.state_hypothesis_pilot import run_state_hypothesis_batch
+    try:
+        _print_json({'status': 'completed', 'root': str(run_state_hypothesis_batch(config_path))})
+    except Exception as error:
+        _fail(error)
+
+
+@app.command("import-state-classification")
+def import_state_classification_command(root: Path, output: Path) -> None:
+    """从已完成的状态实验生成独立展示清单，不重跑收益。"""
+    from factor_miner.regime import import_state_batch
+    try:
+        manifest = import_state_batch(root, output)
+        _print_json(dict(records=len(manifest.records),context_id=manifest.context_id,path=str(output)))
+    except Exception as error:
+        _fail(error)
+
+
+@app.command("publish-state-classification")
+def publish_state_classification_command(manifest: Path, market_id: str, dsn_env: str = typer.Option(...)) -> None:
+    """把显式状态清单增量投影到指定市场的只读索引。"""
+    import os
+    from factor_miner_pg.regime_store import project_regimes
+    try:
+        dsn = os.environ.get(dsn_env)
+        if not dsn:
+            raise ValueError('未配置指定 DSN 环境变量')
+        _print_json(project_regimes(manifest,dsn,market_id))
+    except Exception as error:
+        _fail(error)
+
+
+@app.command("regime-hypothesis-request")
+def regime_hypothesis_request_command(config: Path, output: Path) -> None:
+    """为人工、GPT 与 DeepSeek 生成同一份无收益信息的状态提议请求。"""
+    from factor_miner.llm_hypothesis import regime_hypothesis_request
+    try:
+        request = regime_hypothesis_request(_read_json(config))
+        with output.open('x') as stream:
+            json.dump(request,stream,ensure_ascii=False,indent=2)
+        _print_json(dict(status='prepared',path=str(output)))
+    except Exception as error:
+        _fail(error)
+
+
 @app.command("register-joint-diagnostic")
 def register_joint_diagnostic(config: Path = typer.Argument(..., help="既有候选联合诊断配置"),
                               output: Path = typer.Argument(..., help="新的独立产物目录")) -> None:
@@ -3970,6 +4875,51 @@ def publish_joint_library_command(root: Path, dsn_env: str = typer.Option(...)) 
     """将成员角色投影到已有候选数据库。"""
     from factor_miner_pg.joint_library_store import publish_library
     _print_json(publish_library(root, os.environ[dsn_env]))
+
+
+@app.command("export-joint-features")
+def export_joint_features_command(root: Path, output: Path) -> None:
+    """导出已采纳研究代表的原始因子宽表与来源清单，供下游训练准备使用。"""
+    from factor_miner.feature_export import export_joint_features
+    try:
+        _print_json(export_joint_features(root, output))
+    except Exception as error:
+        _fail(error)
+
+
+@app.command("run-favor-api")
+def run_favor_api_command(root: Path, market_id: str = typer.Option(...), plan_sha256: str = typer.Option(...)) -> None:
+    """按已预览冻结计划调用 API 生成公式，再执行共同研究流程。"""
+    from factor_miner.favor_api import run_api_research
+    try:
+        result = run_api_research(root, market_id, plan_sha256)
+        _print_json(result)
+        if result['status'] != 'completed':
+            raise typer.Exit(code=1)
+    except typer.Exit:
+        raise
+    except Exception as error:
+        _fail(error)
+
+
+@app.command("prepare-annual-financial-panel")
+def prepare_annual_financial_panel_command(config: Path) -> None:
+    """按公告版本生成原始年报可得面板，不读取收益。"""
+    from factor_miner.pit_financials import prepare_annual_financial_panel
+    try:
+        typer.echo(str(prepare_annual_financial_panel(config)))
+    except Exception as error:
+        _fail(error)
+
+
+@app.command("run-top-selection")
+def run_top_selection_command(config: Path, run_root: Path, output: Path) -> None:
+    """执行事前登记的顶部选股与固定代表增量诊断，不写候选库。"""
+    from factor_miner.top_selection import run_top_selection
+    try:
+        typer.echo(str(run_top_selection(config, run_root, output)))
+    except Exception as error:
+        _fail(error)
 
 
 if __name__ == "__main__":

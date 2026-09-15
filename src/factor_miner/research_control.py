@@ -39,6 +39,10 @@ class ResearchControlStore:
             and self.active_state() is not None
         ):
             raise ValueError("已有活动研究批次，不能创建第二个批次")
+        if command.command_type is ResearchCommandType.START and any(
+            item.command_type is ResearchCommandType.START for item in self.pending_commands()
+        ):
+            raise ValueError("已有等待启动的研究批次，请先连接生成服务")
         return _atomic_write_immutable(path, payload)
 
     def pending_commands(self) -> tuple[ResearchCommand, ...]:

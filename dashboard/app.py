@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from factor_miner.errors import FactorMinerError
-from dashboard.read import load_server_snapshot
+from dashboard.market_profiles import load_market_profiles
+from dashboard.market_page import render_market_page
+from dashboard.read import load_optional_snapshot
 from dashboard.ui import (
     apply_theme,
     candidate_payload,
@@ -22,23 +24,27 @@ from dashboard.ui import (
     pct,
     portfolio_values,
     recent_portfolio_values,
+    render_no_published_run,
     section,
 )
 
 
 def main() -> None:
-    """读取服务器正式产物并展示，不提供研究写操作。"""
+    """读取当前市场正式产物并展示，不提供研究写操作。"""
 
     try:
         import streamlit as st  # type: ignore[import-not-found]
     except ImportError as error:
-        raise RuntimeError("运行 Dashboard 前请在服务器环境安装 Streamlit") from error
+        raise RuntimeError("运行 Dashboard 前请安装 Streamlit") from error
 
     apply_theme(st, page_title="Factor Miner｜研究驾驶舱")
     try:
-        snapshot = load_server_snapshot()
+        snapshot = load_optional_snapshot()
     except FactorMinerError as error:
         hero(st, kicker="FACTOR MINER / READ MODEL", title="研究驾驶舱暂时不可用", copy=str(error))
+        return
+    if snapshot is None:
+        render_no_published_run(st, lens="RESEARCH COCKPIT")
         return
 
     ids = candidate_ids(snapshot)
@@ -64,7 +70,7 @@ def main() -> None:
     with cards[0]:
         metric_card(st, "候选数量", str(len(ids)), "本次发布的完整候选集合")
     with cards[1]:
-        metric_card(st, "主期限 RankIC", pct(first_ic.get("rank_ic_mean")), "冻结的 5 日标签")
+        metric_card(st, "主期限 RankIC", number(first_ic.get("rank_ic_mean"), 4), "原始小数 · 冻结 5 日标签")
     with cards[2]:
         metric_card(st, "目标多头 Sharpe", number(long_short.get("sharpe")), "扣费后净收益")
     with cards[3]:
@@ -87,7 +93,8 @@ def main() -> None:
             "候选": candidate_name(candidate_id),
             "发现方向": selected_direction,
             "假设关系": relation,
-            "RankIC 均值": ic.get("rank_ic_mean") * 100 if isinstance(ic.get("rank_ic_mean"), (int, float)) else None,
+            "IC 均值": ic.get("ic_mean") if isinstance(ic.get("ic_mean"), (int, float)) else None,
+            "RankIC 均值": ic.get("rank_ic_mean") if isinstance(ic.get("rank_ic_mean"), (int, float)) else None,
             "HAC t 值": ic.get("rank_ic_hac_t"),
             "5 日有效日期": next((item.get("valid_dates") for item in ic.get("decay", []) if isinstance(item, dict) and item.get("horizon") == 5), None),
             "目标多头年化收益": spread.get("annualized_return") * 100 if isinstance(spread.get("annualized_return"), (int, float)) else None,
@@ -100,7 +107,8 @@ def main() -> None:
         width="stretch",
         hide_index=True,
         column_config={
-            "RankIC 均值": st.column_config.NumberColumn(format="%.2f%%"),
+            "IC 均值": st.column_config.NumberColumn(format="%.6f"),
+            "RankIC 均值": st.column_config.NumberColumn(format="%.4f"),
             "HAC t 值": st.column_config.NumberColumn(format="%.2f"),
             "目标多头年化收益": st.column_config.NumberColumn(format="%.2f%%"),
             "目标多头 Sharpe": st.column_config.NumberColumn(format="%.2f"),
@@ -116,7 +124,7 @@ def main() -> None:
     section(st, "候选详情", candidate_name(selected))
     detail_cards = st.columns(4)
     with detail_cards[0]:
-        metric_card(st, "IC 均值", pct(selected_ic.get("ic_mean")), "主期限 5 日")
+        metric_card(st, "IC 均值", number(selected_ic.get("ic_mean"), 4), "原始小数 · 主期限 5 日")
     with detail_cards[1]:
         metric_card(st, "RankIC IR", number(selected_ic.get("rank_ic_ir")), "均值 / 样本波动")
     with detail_cards[2]:
@@ -142,31 +150,46 @@ def main() -> None:
             st.info("Barra 暂未启用：当前页面保留可见状态，不把缺失数据解释成零暴露。")
 
     with st.expander("研究边界与数据血缘"):
-        st.write("真实行情、标签、IC 和组合评价均在公司 Linux 服务器执行；页面从正式 JSON/JSONL/Parquet 产物读取图表，PostgreSQL 只提供简洁因子索引和指标。")
+        st.write("真实行情、标签、IC 和组合评价可在 macOS、Linux 或其他受支持环境执行；页面从当前市场的正式 JSON/JSONL/Parquet 产物读取图表，PostgreSQL 只提供可重建的因子索引和指标。")
         st.write(f"产物数量：{len(snapshot.artifact_refs)}；清单哈希：{snapshot.artifact_manifest_sha256}")
 
 
-if __name__ == "__main__":
+def market_data_main() -> None:
+    """展示当前研究系统的数据合同与独立产物空间。"""
+
     import streamlit as st  # type: ignore[import-not-found]
 
-    navigation = st.navigation(
-        {
-            "研究": [
-                st.Page(main, title="研究驾驶舱", icon=":material/dashboard:", default=True),
-                st.Page("pages/12_研究代表库.py", title="研究代表库", icon=":material/filter_alt:"),
-                st.Page("pages/1_批次总览.py", title="批次总览", icon=":material/view_list:"),
-                st.Page("pages/6_假设工作台.py", title="假设工作台", icon=":material/lightbulb:"),
-                st.Page("pages/7_研究运行台.py", title="研究运行台", icon=":material/science:"),
-            ],
-            "诊断": [
-                st.Page("pages/2_IC诊断.py", title="IC 诊断", icon=":material/timeline:"),
-                st.Page("pages/3_分组回测.py", title="目标多头回测", icon=":material/show_chart:"),
-                st.Page("pages/4_Barra归因.py", title="Barra 归因", icon=":material/account_tree:"),
-            ],
-            "治理": [
-                st.Page("pages/5_运行审计.py", title="运行审计", icon=":material/verified:"),
-            ],
-        },
-        position="sidebar",
-    )
+    render_market_page(st, str(st.session_state.get("fm_market_id", "a_share")))
+
+
+if __name__ == "__main__":
+    import streamlit as st
+    from dashboard.market_profiles import default_market_id
+    from dashboard.results import render_results
+    from dashboard.settings import render_settings
+
+    try:
+        profiles = load_market_profiles()
+    except (ValueError, OSError) as error:
+        st.error("市场配置无法读取，请检查本地配置。")
+        with st.expander("具体原因"):
+            st.text(str(error))
+        st.stop()
+    if profiles:
+        profile_ids = [profile.market_id for profile in profiles]
+        current = st.session_state.get("fm_market_id", default_market_id(profiles))
+        if current not in profile_ids:
+            current = default_market_id(profiles)
+        st.sidebar.selectbox(
+            "研究市场", profile_ids, index=profile_ids.index(current),
+            format_func=lambda value: next(profile.display_name for profile in profiles if profile.market_id == value),
+            key="fm_market_id",
+        )
+    st.sidebar.caption("FACTOR MINER · 研究工作台")
+    navigation = st.navigation([
+        st.Page(render_results, title="看结果", icon=":material/show_chart:", default=True),
+        st.Page("pages/7_研究运行台.py", title="挖因子", icon=":material/science:"),
+        st.Page("pages/12_研究代表库.py", title="研究代表库", icon=":material/filter_alt:"),
+        st.Page(render_settings, title="设置", icon=":material/settings:"),
+    ])
     navigation.run()

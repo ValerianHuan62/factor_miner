@@ -38,6 +38,7 @@ from factor_miner.long_only_protocol import (
     LongOnlyResearchProtocol,
     select_direction,
 )
+from factor_miner.label_dataset import purge_label_event_overlap
 from factor_miner.pilot_schema import (
     BarraAvailability,
     PilotFixedCandidate,
@@ -56,7 +57,6 @@ from factor_miner.pilot_sources import (
     inspect_pilot_sources,
 )
 from factor_miner.policy import company_a_share_visible_policy
-from factor_miner.portfolio_data_source import align_open_to_open_panel
 from factor_miner.portfolio_artifacts import PublishedRunManifest, publish_run_artifacts
 from factor_miner.portfolio_evaluation import PortfolioBacktestResult, run_target_long_backtest
 from factor_miner.portfolio_schema import (
@@ -171,7 +171,15 @@ def compute_fixed_signal_panels(
         raise _runner_error("valid_for_factor_rank 掩码主键重复")
     trading_mask = (
         source.scan_inputs(request)
-        .select(["date", "asset", "valid_for_trading"])
+        .select(
+            [
+                "date",
+                "asset",
+                "valid_for_factor_rank",
+                "can_open_long",
+                "can_close_long",
+            ]
+        )
         .filter(pl.col("date").is_between(request.start, request.end, closed="both"))
         .collect()
         .rename(
@@ -184,7 +192,7 @@ def compute_fixed_signal_panels(
     if trading_mask.select(
         pl.struct(["signal_date", "security_id"]).is_duplicated().any()
     ).item():
-        raise _runner_error("valid_for_trading 掩码主键重复")
+        raise _runner_error("因果成交状态主键重复")
     panels: list[FixedSignalPanel] = []
     for candidate in candidates.candidates:
         plan = _compile_for_candidate(candidate, allowed_fields)
@@ -351,6 +359,8 @@ def build_open_to_open_ic_panel(
             "asset",
             "factor_value",
             "valid_for_factor_rank",
+            pl.col("entry_date").alias("label_entry_date"),
+            pl.col("exit_date_5").alias("label_exit_date"),
             *[f"forward_return_{horizon}" for horizon in horizons],
         ]
     )
@@ -593,14 +603,18 @@ def evaluate_long_only_windows(
         raise _runner_error("Bonferroni 检验族规模必须为正整数")
     frozen = protocol or LongOnlyResearchProtocol()
     policy = evaluation_policy or company_a_share_visible_policy()
-    discovery_rank_ic = discovery_rank_ic_evaluator(
-        _window_slice(
-            labeled_panel,
-            frozen.discovery_start,
-            frozen.discovery_end,
-        ),
-        policy,
+    discovery_slice = _window_slice(
+        labeled_panel,
+        frozen.discovery_start,
+        frozen.discovery_end,
     )
+    if "label_exit_date" not in discovery_slice.collect_schema().names():
+        raise _runner_error("发现期训练输入缺少 label_exit_date，无法执行事件区间 purge")
+    discovery_purged, _ = purge_label_event_overlap(
+        discovery_slice,
+        next_split_start=frozen.confirmation_start,
+    )
+    discovery_rank_ic = discovery_rank_ic_evaluator(discovery_purged.lazy(), policy)
     decision, direction_sha256 = _freeze_direction_decision(
         rank_ic=discovery_rank_ic,
         hypothesis_direction=hypothesis_direction,
@@ -1460,7 +1474,11 @@ def build_benchmark_open_to_open_returns(
     index_panel: pl.LazyFrame,
     schedule: tuple[RebalanceWindow, ...],
 ) -> pl.LazyFrame:
-    """从 CSI300 指数开盘价构造唯一 exit_date 基准收益。"""
+    """从 CSI300 指数开盘价构造逐交易日开盘收益。
+
+    首个信号日至首个入场日组合尚未持有证券，因此基准收益也记为零；
+    此后基准连续持有，不按因子组合的成交状态筛选。
+    """
 
     schema = index_panel.collect_schema().names()
     date_column = "trade_date" if "trade_date" in schema else "date"
@@ -1493,38 +1511,38 @@ def build_benchmark_open_to_open_returns(
         pl.col("open").is_null() | (pl.col("open") <= 0)
     ).limit(1).collect().height:
         raise _runner_error("CSI300 指数开盘价缺失或非正")
-    schedule_frame = pl.DataFrame(
+    if not schedule:
+        raise _runner_error("CSI300 基准调仓窗口不能为空")
+    required_dates = {
+        value
+        for item in schedule
+        for value in (item.signal_date, item.entry_date, item.exit_date)
+    }
+    available_dates = set(index.select("trade_date").collect().to_series().to_list())
+    if required_dates.difference(available_dates):
+        raise _runner_error("CSI300 缺少组合窗口端点开盘价")
+    first_signal = schedule[0].signal_date
+    first_entry = schedule[0].entry_date
+    visible = (
+        index.filter(pl.col("trade_date") >= first_signal)
+        .select("trade_date", pl.col("open").cast(pl.Float64))
+        .sort("trade_date")
+        .collect()
+    )
+    dates = visible["trade_date"].to_list()
+    opens = visible["open"].to_list()
+    return pl.DataFrame(
         {
-            "entry_date": [item.entry_date for item in schedule],
-            "exit_date": [item.exit_date for item in schedule],
+            "entry_date": dates[:-1],
+            "exit_date": dates[1:],
+            "benchmark_return": [
+                0.0 if current <= first_entry else current_open / previous_open - 1.0
+                for previous_open, current_open, current in zip(
+                    opens[:-1], opens[1:], dates[1:], strict=True
+                )
+            ],
         }
     ).lazy()
-    entry = index.rename(
-        {
-            "trade_date": "entry_date",
-            "open": "entry_open",
-        }
-    )
-    exit_frame = index.rename(
-        {
-            "trade_date": "exit_date",
-            "open": "exit_open",
-        }
-    )
-    result = (
-        schedule_frame.join(entry, on="entry_date", how="left")
-        .join(exit_frame, on="exit_date", how="left")
-    )
-    if result.filter(
-        pl.col("entry_open").is_null() | pl.col("exit_open").is_null()
-    ).limit(1).collect().height:
-        raise _runner_error("CSI300 缺少组合窗口对应开盘价")
-    return result.select(
-        [
-            "exit_date",
-            (pl.col("exit_open") / pl.col("entry_open") - 1.0).alias("benchmark_return"),
-        ]
-    )
 
 
 def evaluate_fixed_candidate_portfolio(
@@ -1541,29 +1559,15 @@ def evaluate_fixed_candidate_portfolio(
     """执行一个固定候选的目标多头和日历年化指标。"""
 
     evaluation_policy = policy or PortfolioEvaluationPolicy()
-    trading_mask = signal_panel.trading_mask.lazy().rename(
+    state_panel = signal_panel.trading_mask.lazy().rename(
         {
-            "signal_date": "mask_date",
-            "security_id": "mask_asset",
+            "signal_date": "trade_date",
         }
     )
-    factor = signal_panel.frame.lazy().join(
-        trading_mask,
-        left_on=["signal_date", "security_id"],
-        right_on=["mask_date", "mask_asset"],
-        how="left",
-    )
-    if factor.filter(pl.col("valid_for_trading").is_null()).limit(1).collect().height:
-        raise _runner_error("信号面板缺少 valid_for_trading 掩码")
-    factor = factor.filter(
-        (pl.col("valid_for_trading") == True)
-        & pl.col("factor_value").is_not_null()
-    ).select(
-        ["signal_date", "security_id", "factor_value"]
-    )
-    aligned = align_open_to_open_panel(factor, market_panel, schedule)
     backtest = run_target_long_backtest(
-        aligned,
+        signal_panel.frame.lazy(),
+        market_panel,
+        state_panel,
         benchmark_returns,
         schedule,
         evaluation_policy,

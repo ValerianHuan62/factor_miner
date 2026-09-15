@@ -9,6 +9,7 @@ import polars as pl
 from pydantic import BaseModel, ConfigDict, Field
 
 from factor_miner.canonical import sha256_json
+from factor_miner.causal_backtest import simulate_causal_extreme_portfolio
 from factor_miner.errors import FactorMinerError, FailureCode
 from factor_miner.portfolio_schema import (
     PortfolioEvaluationPolicy,
@@ -60,6 +61,9 @@ class PortfolioBacktestResult(BaseModel):
     direction: Literal["positive", "negative"]
     daily_returns: tuple[dict[str, object], ...] = Field(min_length=1)
     weights: tuple[dict[str, object], ...] = Field(min_length=1)
+    orders: tuple[dict[str, object], ...] = ()
+    holdings_daily: tuple[dict[str, object], ...] = ()
+    execution_summary: dict[str, object] = Field(default_factory=dict)
     governance: PortfolioGovernanceSummary
     result_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
 
@@ -72,6 +76,9 @@ class PortfolioBacktestResult(BaseModel):
         daily_returns: tuple[dict[str, object], ...],
         weights: tuple[dict[str, object], ...],
         governance: PortfolioGovernanceSummary,
+        orders: tuple[dict[str, object], ...] = (),
+        holdings_daily: tuple[dict[str, object], ...] = (),
+        execution_summary: dict[str, object] | None = None,
     ) -> PortfolioBacktestResult:
         """由完整结果长表构造内容寻址结果。"""
 
@@ -92,6 +99,9 @@ class PortfolioBacktestResult(BaseModel):
                 "direction": direction,
                 "daily_returns": jsonable(daily_returns),
                 "weights": jsonable(weights),
+                "orders": jsonable(orders),
+                "holdings_daily": jsonable(holdings_daily),
+                "execution_summary": jsonable(execution_summary or {}),
                 "governance": governance.model_dump(mode="json"),
             }
         )
@@ -100,6 +110,9 @@ class PortfolioBacktestResult(BaseModel):
             direction=direction,
             daily_returns=daily_returns,
             weights=weights,
+            orders=orders,
+            holdings_daily=holdings_daily,
+            execution_summary=execution_summary or {},
             governance=governance,
             result_sha256=result_hash,
         )
@@ -150,236 +163,87 @@ def _portfolio_error(message: str) -> FactorMinerError:
     return FactorMinerError(FailureCode.PORTFOLIO_DATA_CONTRACT_INVALID, message)
 
 
-def _validate_panel(panel: pl.LazyFrame) -> None:
-    """检查已对齐 open-to-open 面板的最小字段。"""
-
-    required = {
-        "signal_date",
-        "entry_date",
-        "exit_date",
-        "security_id",
-        "factor_value",
-        "asset_return",
-    }
-    missing = required.difference(panel.collect_schema().names())
-    if missing:
-        raise _portfolio_error(f"组合面板缺少字段：{sorted(missing)}")
-
-
-def _calculate_turnover(
-    positions: pl.LazyFrame,
-    schedule: tuple[RebalanceWindow, ...],
-) -> pl.LazyFrame:
-    """按同一持仓组合的前一期权重计算单边换手。"""
-
-    entries = [item.entry_date for item in schedule]
-    previous_map = pl.DataFrame(
-        {"entry_date": entries, "previous_entry_date": [None, *entries[:-1]]}
-    ).lazy()
-    positions_with_previous = positions.join(previous_map, on="entry_date", how="left")
-    previous_positions = positions.select(
-        [
-            pl.col("entry_date").alias("previous_entry_date"),
-            "portfolio",
-            "security_id",
-            pl.col("weight").alias("previous_weight"),
-        ]
-    )
-    return (
-        positions_with_previous.join(
-            previous_positions,
-            on=["previous_entry_date", "portfolio", "security_id"],
-            how="left",
-        )
-        .with_columns(
-            pl.when(pl.col("previous_weight").is_null())
-            .then(pl.lit(0.0))
-            .otherwise(pl.col("previous_weight"))
-            .alias("previous_weight_effective")
-        )
-        .group_by(["entry_date", "portfolio"])
-        .agg(
-            pl.when(pl.col("previous_entry_date").first().is_null())
-            .then(pl.lit(1.0))
-            .otherwise(
-                1.0 - (pl.min_horizontal("weight", "previous_weight_effective")).sum()
-            )
-            .alias("turnover")
-        )
-    )
-
-
 def run_target_long_backtest(
-    panel: pl.LazyFrame,
-    benchmark: pl.LazyFrame,
+    factor_panel: pl.DataFrame | pl.LazyFrame,
+    market_panel: pl.DataFrame | pl.LazyFrame,
+    state_panel: pl.DataFrame | pl.LazyFrame,
+    benchmark: pl.DataFrame | pl.LazyFrame,
     schedule: tuple[RebalanceWindow, ...],
     policy: PortfolioEvaluationPolicy,
     *,
     direction: Literal["positive", "negative"] = "positive",
 ) -> PortfolioBacktestResult:
-    """执行冻结的目标多头回测和内部极端组胜率诊断。
+    """先按 T 日冻结选择，再通过因果订单状态机执行目标多头。"""
 
-    `benchmark` 必须包含 `exit_date` 与 `benchmark_return`；当前函数保留该列
-    供组合结果对账，超额收益和信息比率在统计层计算。
-    """
-
-    _validate_panel(panel)
     if direction not in {"positive", "negative"}:
         raise _portfolio_error("因子方向只能是 positive 或 negative")
     if not schedule:
         raise _portfolio_error("组合回测调仓窗口不能为空")
-    if set(benchmark.collect_schema().names()) != {
+    benchmark_frame = benchmark.collect() if isinstance(benchmark, pl.LazyFrame) else benchmark
+    if set(benchmark_frame.columns) != {
+        "entry_date",
         "exit_date",
         "benchmark_return",
     }:
-        raise _portfolio_error("benchmark 必须精确包含 exit_date 和 benchmark_return")
-    benchmark_duplicate = (
-        benchmark.group_by("exit_date").len().filter(pl.col("len") > 1).limit(1).collect()
-    )
-    if benchmark_duplicate.height:
+        raise _portfolio_error("benchmark 必须精确包含 entry_date、exit_date 和 benchmark_return")
+    if benchmark_frame.select(pl.col("exit_date").is_duplicated().any()).item():
         raise _portfolio_error("benchmark exit_date 重复")
-
-    data = panel.filter(
-        pl.col("factor_value").is_not_null()
-        & pl.col("asset_return").is_not_null()
+    target = simulate_causal_extreme_portfolio(
+        factor_panel,
+        market_panel,
+        state_panel,
+        schedule,
+        direction=direction,
+        group_count=policy.group_count,
+        round_trip_cost_bps=policy.round_trip_cost_bps,
     )
-    ordered = (
-        data.sort(
-            ["entry_date", "factor_value", "security_id"],
-            descending=[False, True, False],
-        )
-        .with_columns(
-            pl.col("factor_value")
-            .rank(method="ordinal", descending=True)
-            .over("entry_date")
-            .alias("_ordinal_rank"),
-            pl.len().over("entry_date").alias("_name_count"),
-        )
-        .with_columns(
-            (
-                ((pl.col("_ordinal_rank") - 1) * policy.group_count / pl.col("_name_count"))
-                .floor()
-                + 1
-            )
-            .cast(pl.Int64)
-            .alias("_group")
-        )
+    high = target if direction == "positive" else simulate_causal_extreme_portfolio(
+        factor_panel, market_panel, state_panel, schedule,
+        direction="positive", group_count=policy.group_count,
+        round_trip_cost_bps=policy.round_trip_cost_bps,
     )
-    invalid_counts = (
-        ordered.group_by("entry_date")
-        .agg(pl.col("_name_count").first().alias("name_count"))
-        .filter(pl.col("name_count") < policy.group_count)
-        .limit(1)
-        .collect()
+    low = target if direction == "negative" else simulate_causal_extreme_portfolio(
+        factor_panel, market_panel, state_panel, schedule,
+        direction="negative", group_count=policy.group_count,
+        round_trip_cost_bps=policy.round_trip_cost_bps,
     )
-    if invalid_counts.height:
-        raise _portfolio_error("某个调仓窗口可分组股票少于 10 只")
-    empty_groups = (
-        ordered.group_by(["entry_date", "_group"])
-        .len()
-        .group_by("entry_date")
-        .agg(pl.len().alias("group_count"))
-        .filter(pl.col("group_count") != policy.group_count)
-        .limit(1)
-        .collect()
+    benchmark_map = {
+        (row["entry_date"], row["exit_date"]): float(row["benchmark_return"])
+        for row in benchmark_frame.iter_rows(named=True)
+    }
+    rows = tuple(
+        {
+            **row,
+            "benchmark_return": benchmark_map[(row["entry_date"], row["exit_date"])],
+        }
+        for row in target.daily_returns
     )
-    if empty_groups.height:
-        raise _portfolio_error("某个调仓窗口存在空分组")
-
-    grouped_positions = (
-        ordered.with_columns(
-            (
-                1.0 / pl.len().over(["entry_date", "_group"])
-            ).alias("weight"),
-        )
-        .select(
-            "signal_date",
-            "entry_date",
-            "exit_date",
-            "security_id",
-            "_group",
-            "weight",
-            "asset_return",
-        )
-    )
-    target_group = 1 if direction == "positive" else policy.group_count
-    target_positions = grouped_positions.filter(pl.col("_group") == target_group).with_columns(
-        pl.lit("target_long").alias("portfolio")
-    )
-    target_returns = target_positions.group_by(["entry_date", "exit_date"]).agg(
-        (pl.col("weight") * pl.col("asset_return")).sum().alias("target_long_gross_return")
-    )
-    target_turnover = _calculate_turnover(target_positions, schedule).select(
-        ["entry_date", pl.col("turnover").alias("target_long_turnover")]
-    )
-    cost_rate = policy.round_trip_cost_bps / 10_000.0
-    final = (
-        target_returns.join(target_turnover, on="entry_date", how="inner")
-        .with_columns(
-            (pl.col("target_long_turnover") * cost_rate).alias("target_long_cost"),
-        )
-        .with_columns(
-            (
-                pl.col("target_long_gross_return")
-                - pl.col("target_long_cost")
-            ).alias("target_long_net_return")
-        )
-        .join(benchmark, on="exit_date", how="inner")
-        .select(
-            "entry_date",
-            "exit_date",
-            "target_long_gross_return",
-            "target_long_turnover",
-            "target_long_cost",
-            "target_long_net_return",
-            "benchmark_return",
-        )
-    )
-    rows = tuple(final.sort("entry_date").collect().to_dicts())
     weight_rows = tuple(
-        target_positions.select(
-            "signal_date", "entry_date", "exit_date", "security_id", "portfolio", "weight"
-        )
-        .sort(["entry_date", "security_id"])
-        .collect()
-        .to_dicts()
+        {
+            "signal_date": row["signal_date"],
+            "entry_date": row["entry_date"],
+            "exit_date": row["scheduled_exit_date"],
+            "security_id": row["security_id"],
+            "portfolio": "target_long",
+            "weight": row["target_weight"],
+        }
+        for row in target.selections
     )
-    if not rows:
-        raise _portfolio_error("组合回测没有可用收益窗口")
-    governance_positions = grouped_positions.filter(pl.col("_group").is_in([1, policy.group_count])).with_columns(
-        pl.when(pl.col("_group") == 1)
-        .then(pl.lit("high"))
-        .otherwise(pl.lit("low"))
-        .alias("portfolio")
-    )
-    governance_returns = (
-        governance_positions.group_by(["entry_date", "exit_date", "portfolio"])
-        .agg((pl.col("weight") * pl.col("asset_return")).sum().alias("gross_return"))
-        .collect()
-        .pivot(on="portfolio", index=["entry_date", "exit_date"], values="gross_return")
-        .rename({"high": "high_gross_return", "low": "low_gross_return"})
-        .lazy()
-    )
-    governance_turnover = (
-        _calculate_turnover(governance_positions, schedule)
-        .collect()
-        .pivot(on="portfolio", index="entry_date", values="turnover")
-        .rename({"high": "high_turnover", "low": "low_turnover"})
-        .lazy()
-    )
+    high_map = {
+        (row["entry_date"], row["exit_date"]): float(row["target_long_net_return"])
+        for row in high.daily_returns
+    }
+    low_map = {
+        (row["entry_date"], row["exit_date"]): float(row["target_long_net_return"])
+        for row in low.daily_returns
+    }
     governance_rows = tuple(
-        governance_returns.join(governance_turnover, on="entry_date", how="inner")
-        .with_columns(
-            (
-                pl.col("high_gross_return")
-                - pl.col("low_gross_return")
-                - (pl.col("high_turnover") + pl.col("low_turnover")) / 2.0 * cost_rate
-            ).alias("extreme_spread_net_return")
-        )
-        .select("entry_date", "exit_date", "extreme_spread_net_return")
-        .sort("entry_date")
-        .collect()
-        .to_dicts()
+        {
+            "entry_date": entry_date,
+            "exit_date": exit_date,
+            "extreme_spread_net_return": high_return - low_map[(entry_date, exit_date)],
+        }
+        for (entry_date, exit_date), high_return in sorted(high_map.items())
     )
     governance = PortfolioGovernanceSummary.build(
         tuple(ExtremeSpreadDiagnostic.model_validate(item) for item in governance_rows)
@@ -389,13 +253,18 @@ def run_target_long_backtest(
         direction=direction,
         daily_returns=rows,
         weights=weight_rows,
+        orders=target.orders,
+        holdings_daily=target.holdings_daily,
+        execution_summary=target.execution_summary,
         governance=governance,
     )
 
 
 def run_portfolio_backtest(
-    panel: pl.LazyFrame,
-    benchmark: pl.LazyFrame,
+    factor_panel: pl.DataFrame | pl.LazyFrame,
+    market_panel: pl.DataFrame | pl.LazyFrame,
+    state_panel: pl.DataFrame | pl.LazyFrame,
+    benchmark: pl.DataFrame | pl.LazyFrame,
     schedule: tuple[RebalanceWindow, ...],
     policy: PortfolioEvaluationPolicy,
     *,
@@ -403,4 +272,12 @@ def run_portfolio_backtest(
 ) -> PortfolioBacktestResult:
     """保留模块入口名称，执行目标多头而非旧多空协议。"""
 
-    return run_target_long_backtest(panel, benchmark, schedule, policy, direction=direction)
+    return run_target_long_backtest(
+        factor_panel,
+        market_panel,
+        state_panel,
+        benchmark,
+        schedule,
+        policy,
+        direction=direction,
+    )

@@ -7,7 +7,7 @@ import json
 import unittest
 from unittest.mock import Mock, patch
 
-from dashboard.read import load_server_barra_snapshot, load_server_snapshot
+from dashboard.read import load_optional_snapshot, load_server_barra_snapshot, load_server_snapshot
 from dashboard.ui import daily_rows
 from factor_miner.dashboard_labels import chinese_candidate_label
 from factor_miner.errors import FactorMinerError
@@ -32,7 +32,14 @@ REQUIRED_CORE_METRICS = (
 
 
 class DashboardContractTest(unittest.TestCase):
-    """Dashboard 缺少运行环境私有连接时必须硬失败。"""
+    """Dashboard 在无运行时可浏览，在正式产物损坏时硬失败。"""
+
+    def setUp(self) -> None:
+        """这些旧投影合同显式测试 A 股，不依赖首页默认市场。"""
+        for target in ("dashboard.read.current_market_id", "dashboard.market_profiles.current_market_id"):
+            patcher = patch(target, return_value="a_share")
+            patcher.start()
+            self.addCleanup(patcher.stop)
 
     def test_dashboard_requires_private_server_configuration(self) -> None:
         with patch.dict(
@@ -42,6 +49,20 @@ class DashboardContractTest(unittest.TestCase):
         ):
             with self.assertRaises(FactorMinerError):
                 load_server_snapshot()
+
+    def test_optional_dashboard_snapshot_allows_market_without_run(self) -> None:
+        """配置本地市场但尚未研究时，诊断页应显示空状态而不是报错。"""
+
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ,
+            {
+                "FM_DASHBOARD_ARTIFACT_ROOT": directory,
+                "FM_ARTIFACT_ROOT": "",
+                "FM_DASHBOARD_RUN_ID": "",
+            },
+            clear=False,
+        ):
+            self.assertIsNone(load_optional_snapshot())
 
     def test_dashboard_reads_charts_from_files_and_requires_postgres(self) -> None:
         """图表来自正式产物，同时 PostgreSQL 连接仍是硬要求。"""
@@ -62,8 +83,8 @@ class DashboardContractTest(unittest.TestCase):
             with patch.dict(
                 os.environ,
                 {
-                    "FM_ARTIFACT_ROOT": str(root),
-                    "FM_DASHBOARD_RUN_ID": run_id,
+                    "FM_DASHBOARD_ARTIFACT_ROOT_A_SHARE": str(root),
+                    "FM_DASHBOARD_RUN_ID_A_SHARE": run_id,
                     "FM_DASHBOARD_DSN": "postgresql://local",
                 },
                 clear=False,
@@ -95,8 +116,8 @@ class DashboardContractTest(unittest.TestCase):
         with patch.dict(
             os.environ,
             {
-                "FM_ARTIFACT_ROOT": "/tmp/dashboard-cache-contract",
-                "FM_DASHBOARD_RUN_ID": run_id,
+                "FM_DASHBOARD_ARTIFACT_ROOT_A_SHARE": "/tmp/dashboard-cache-contract",
+                "FM_DASHBOARD_RUN_ID_A_SHARE": run_id,
                 "FM_DASHBOARD_DSN": "postgresql://private",
             },
             clear=False,
@@ -152,9 +173,9 @@ class DashboardContractTest(unittest.TestCase):
         with patch.dict(
             os.environ,
             {
-                "FM_ARTIFACT_ROOT": "/tmp/barra-fallback-contract",
-                "FM_DASHBOARD_RUN_ID": "run_" + "4" * 24,
-                "FM_DASHBOARD_BARRA_RUN_ID": fallback.run_id,
+                "FM_DASHBOARD_ARTIFACT_ROOT_A_SHARE": "/tmp/barra-fallback-contract",
+                "FM_DASHBOARD_RUN_ID_A_SHARE": "run_" + "4" * 24,
+                "FM_DASHBOARD_BARRA_RUN_ID_A_SHARE": fallback.run_id,
                 "FM_DASHBOARD_DSN": "postgresql://private",
             },
             clear=False,
@@ -198,8 +219,8 @@ class DashboardContractTest(unittest.TestCase):
             with patch.dict(
                 os.environ,
                 {
-                    "FM_ARTIFACT_ROOT": str(private_root),
-                    "FM_DASHBOARD_RUN_ID": old_run,
+                    "FM_DASHBOARD_ARTIFACT_ROOT_A_SHARE": str(private_root),
+                    "FM_DASHBOARD_RUN_ID_A_SHARE": old_run,
                     "FM_DASHBOARD_DSN": "postgresql://local",
                 },
                 clear=False,
@@ -220,6 +241,15 @@ class DashboardContractTest(unittest.TestCase):
         self.assertIn("WorkingDirectory=/opt/factor-miner", service)
         self.assertIn("-m streamlit run dashboard/app.py", service)
 
+    def test_local_dashboard_exposes_repository_and_src_packages(self) -> None:
+        """Mac 本地入口也必须能导入 dashboard 与 src 包。"""
+
+        makefile = Path("Makefile").read_text("utf-8")
+        self.assertIn(
+            "PYTHONPATH=src:. uv run --frozen python -m streamlit run dashboard/app.py",
+            makefile,
+        )
+
     def test_dashboard_and_worker_wait_for_postgres(self) -> None:
         """服务器重启时两个服务必须等待数据库就绪。"""
 
@@ -231,27 +261,23 @@ class DashboardContractTest(unittest.TestCase):
             self.assertIn("ExecStartPre=/usr/bin/timeout 120", service)
             self.assertIn("pg_isready -h 127.0.0.1 -p 5432", service)
 
-    def test_research_console_auto_refreshes_only_during_live_work(self) -> None:
-        """活动批次自动轮询，终态页面不得永久占用刷新循环。"""
+    def test_research_console_polls_only_with_connected_worker(self) -> None:
+        """离线队列不伪装正在运行；交互生命周期由页面回归覆盖。"""
 
         page = Path("dashboard/pages/7_研究运行台.py").read_text("utf-8")
         self.assertIn('@st.fragment(run_every="5s")', page)
-        self.assertIn('st.session_state["research_auto_refresh"] = True', page)
-        self.assertIn('st.session_state.pop("research_auto_refresh", None)', page)
-        self.assertIn('state.stage.value in {"failed", "completed"}', page)
-        self.assertIn(
-            'state.stage.value not in {"failed", "completed"}',
-            page,
-        )
-        self.assertIn('st.button("新建下一批研究"', page)
+        self.assertIn("worker_running(artifact_root)", page)
+        self.assertIn("if online and", page)
+        self.assertIn("state.stage.terminal", page)
 
-    def test_navigation_paths_are_relative_to_dashboard_entrypoint(self) -> None:
-        """st.Page 会相对 app.py 所在目录解析页面文件。"""
+    def test_navigation_is_four_direct_tasks(self) -> None:
+        """正式入口提供结果、研究、代表库和设置，历史页面不在导航中。"""
 
         app = Path("dashboard/app.py").read_text("utf-8")
+        self.assertEqual(app.count("st.Page("), 4)
+        for title in ("看结果", "挖因子", "研究代表库", "设置"):
+            self.assertIn(f'title="{title}"', app)
         self.assertNotIn('st.Page("dashboard/pages/', app)
-        for page in range(1, 8):
-            self.assertIn(f'st.Page("pages/{page}_', app)
 
     def test_audit_page_does_not_render_entire_snapshot(self) -> None:
         """折叠区也不能序列化巨型完整快照，否则页面会耗尽内存。"""

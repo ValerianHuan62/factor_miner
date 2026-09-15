@@ -267,7 +267,7 @@ def _trade_inputs(plan: FavorPlan, market, state, days, start, end, boundary=Non
     return schedule, trade_market, trade_state
 
 
-def run_favor(root: Path) -> Path:
+def run_favor(root: Path, *, boundary_check=None) -> Path:
     """完成共同入口全部验证与联合策略，测试结果不得反馈重新挑选。"""
     with writer(root):
         plan = load_plan(root)
@@ -279,7 +279,7 @@ def run_favor(root: Path) -> Path:
         ledger.append_event(TrialEvent(event_type=EventType.RUN_STARTED, status="favor_validation"))
         try:
             from factor_miner.research_pool import ResearchResourceGuard
-            guard = ResearchResourceGuard(plan.search_budget, root)
+            guard = ResearchResourceGuard(plan.search_budget, root, external_check=boundary_check)
             guard.check()
             _evaluate(plan, root, ledger, guard=guard)
         except Exception as error:

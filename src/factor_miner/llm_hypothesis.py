@@ -15,6 +15,8 @@ from pydantic import (
 )
 
 from factor_miner.canonical import sha256_json
+from factor_miner.construct_validation import ObservableCondition
+from factor_miner.hypothesis_constraints import ConditionContract
 from factor_miner.research_evolution import LogicalEvolutionHypothesisDraft
 from factor_miner.research_evolution_schema import (
     ApprovedEvolutionHypothesisBatch,
@@ -67,6 +69,18 @@ class PredictionProposal(BaseModel):
     proposed_field_aliases: tuple[str, ...] = Field(min_length=1)
     proposed_operator_families: tuple[str, ...] = Field(min_length=1)
     optional_conditioning_claim: str | None = None
+    # 缺失字段不改变历史假设内容身份；新假设应在生成公式前冻结此合同。
+    observable_condition: "ObservableCondition | None" = Field(default=None, exclude_if=lambda value: value is None)
+    measurement_contract: ConditionContract | None = Field(default=None, exclude_if=lambda value: value is None)
+
+    @model_validator(mode="after")
+    def consistent_measurement(self):
+        if self.measurement_contract is not None:
+            if self.observable_condition != self.measurement_contract.observation:
+                raise ValueError("观察合同与 Γ 测量条件不一致")
+            if self.expected_sign != self.measurement_contract.expected_return_sign:
+                raise ValueError("假设预期收益方向与 Γ 不一致")
+        return self
 
     @field_validator("observable_proxy")
     @classmethod
@@ -432,6 +446,8 @@ def adapt_approved_evolution_hypotheses_for_arm(
                 proposed_field_aliases=field_aliases,
                 proposed_operator_families=operator_families,
                 optional_conditioning_claim=None,
+                observable_condition=(draft.measurement_contract.observation if draft.measurement_contract else draft.observable_condition),
+                measurement_contract=draft.measurement_contract,
             ),
         )
         adapted.append(
@@ -557,3 +573,17 @@ def summarize_hypothesis_candidates(
     if CandidatePredictionOutcome.REVERSE in unique:
         return HypothesisDiscoverySummary.MIXED_CANDIDATE_EVIDENCE
     return HypothesisDiscoverySummary.HAS_SUPPORTED_CANDIDATE
+
+
+def regime_hypothesis_request(plan_payload: dict) -> dict:
+    """新状态提议入口，只发送假设、允许字段与条件，不带行情或统计结果。"""
+    from factor_miner.favor_schema import parse_favor_plan
+    from factor_miner.regime import REGIME_PROMPT, RegimeHypothesisSpec
+    plan = parse_favor_plan(plan_payload)
+    return dict(instruction=REGIME_PROMPT,
+        hypothesis=plan.hypothesis.model_dump(mode='json'), allowed_fields=plan.allowed_fields,
+        conditions=[dict(condition_id=c.condition_id,observation=c.observation.observation) for c in plan.conditions],
+        response_schema={'type':'object','additionalProperties':False,
+            'required':[c.condition_id for c in plan.conditions],
+            'properties':{c.condition_id:RegimeHypothesisSpec.model_json_schema() for c in plan.conditions}},
+        next_step='将响应按 condition_id 填入计划 regimes，版本设为 favor-regime-v1，再执行 register-favor。')

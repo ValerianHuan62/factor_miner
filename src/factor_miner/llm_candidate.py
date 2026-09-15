@@ -174,6 +174,7 @@ def _build_trusted_candidate_spec(
     hypothesis: RegisteredCoverageGapHypothesis,
     created_at: datetime,
     provenance: dict[str, str],
+    registry: FieldAvailabilityRegistry,
 ) -> TrustedCandidateFactorSpec:
     """把已通过硬校验的候选装配为可信 spec。"""
 
@@ -195,6 +196,14 @@ def _build_trusted_candidate_spec(
         mechanism_status=MechanismStatus.MECHANISM_UNVERIFIED,
     )
     derived_provenance = dict(provenance)
+    if proposal.measurement_contract is not None:
+        from factor_miner.hypothesis_constraints import compile_gamma
+        gamma = compile_gamma(frozen_hypothesis, proposal.measurement_contract,
+                              tuple(x.field_id for x in registry.fields if x.eligible_for_factor))
+        gamma.validate(local_expression, frozen_hypothesis)
+        derived_provenance.update(gamma_json=gamma.model_dump_json(), gamma_sha256=gamma.identity)
+    if proposal.observable_condition is not None:
+        derived_provenance["observable_condition_json"] = proposal.observable_condition.model_dump_json()
     derived_provenance.update(
         {
             "hypothesis_id": hypothesis.hypothesis_id,
@@ -336,6 +345,7 @@ def preflight_candidate_batch(
             hypothesis=hypothesis,
             created_at=created_at,
             provenance=provenance,
+            registry=registry,
         )
         compile_candidate(
             registered_trusted_candidate(candidate),
@@ -381,6 +391,7 @@ def convert_candidate(
         registry=registry,
     )
     return _build_trusted_candidate_spec(
+        registry=registry,
         validation=validation,
         hypothesis=hypothesis,
         created_at=created_at,

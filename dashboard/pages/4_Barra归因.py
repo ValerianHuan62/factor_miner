@@ -3,12 +3,16 @@
 import streamlit as st
 
 from dashboard.barra_view import normalize_barra_view
-from dashboard.read import load_server_barra_snapshot, load_server_run_id
-from dashboard.ui import apply_theme, candidate_ids, candidate_name, candidate_payload, candidate_source_id, hero, metric_card, number, pct, section
+from dashboard.read import load_optional_snapshot, load_server_barra_snapshot, load_server_run_id
+from dashboard.ui import apply_theme, candidate_ids, candidate_name, candidate_payload, candidate_source_id, hero, metric_card, number, pct, render_no_published_run, section
 
 
 apply_theme(st, page_title="Factor Miner｜Barra 归因")
 try:
+    available = load_optional_snapshot()
+    if available is None:
+        render_no_published_run(st, lens="BARRA LENS")
+        st.stop()
     main_run_id = load_server_run_id()
     snapshot = load_server_barra_snapshot()
 except Exception as error:

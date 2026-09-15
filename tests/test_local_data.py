@@ -70,7 +70,14 @@ class LocalDataReleaseTest(unittest.TestCase):
                     "valid_for_factor_compute",
                     "valid_for_factor_rank",
                     "valid_for_trading",
+                    "can_open_long",
+                    "can_close_long",
                 },
+            )
+            label = pl.read_parquet(root / "release" / "label.parquet")
+            self.assertEqual(
+                {"label_entry_date", "label_exit_date", "label_o2o_5d"},
+                set(label.columns).difference({"date", "asset"}),
             )
 
     def test_missing_masks_require_explicit_confirmation(self) -> None:

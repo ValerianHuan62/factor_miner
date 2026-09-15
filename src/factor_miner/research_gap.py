@@ -8,7 +8,9 @@ from dataclasses import dataclass
 import json
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
+
+T = TypeVar("T")
 
 import polars as pl
 
@@ -414,7 +416,7 @@ def _read_json_dict(path: Path, missing_message: str) -> dict[str, object]:
     return payload
 
 
-def _read_jsonl_models[T](path: Path, model: type[T], missing_message: str) -> tuple[T, ...]:
+def _read_jsonl_models(path: Path, model: type[T], missing_message: str) -> tuple[T, ...]:
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
     except OSError as error:
@@ -429,7 +431,7 @@ def _read_jsonl_models[T](path: Path, model: type[T], missing_message: str) -> t
     return tuple(records)
 
 
-def _read_parquet_models[T](path: Path, model: type[T], missing_message: str) -> tuple[T, ...]:
+def _read_parquet_models(path: Path, model: type[T], missing_message: str) -> tuple[T, ...]:
     try:
         frame = pl.read_parquet(path)
     except (OSError, pl.exceptions.PolarsError) as error:

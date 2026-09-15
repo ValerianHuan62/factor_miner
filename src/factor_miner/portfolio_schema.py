@@ -30,15 +30,25 @@ class TradingCalendarIdentity(BaseModel):
 
 
 class PortfolioEvaluationPolicy(BaseModel):
-    """目标多头 A 股组合评价的单一冻结口径。"""
+    """目标多头组合评价的单一冻结口径。"""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    policy_version: Literal["2"] = "2"
+    policy_version: Literal["3"] = "3"
     rebalance_weekday: Literal["Tuesday"] = "Tuesday"
     signal_timing: Literal["prior_trade_close"] = "prior_trade_close"
     entry_timing: Literal["scheduled_open"] = "scheduled_open"
     exit_timing: Literal["next_scheduled_open"] = "next_scheduled_open"
+    selection_timing: Literal["signal_day_before_future_execution"] = (
+        "signal_day_before_future_execution"
+    )
+    unfilled_entry_policy: Literal["cash_no_replacement_no_retry"] = (
+        "cash_no_replacement_no_retry"
+    )
+    delayed_exit_policy: Literal["retry_each_market_session"] = (
+        "retry_each_market_session"
+    )
+    terminal_policy: Literal["fail_closed"] = "fail_closed"
     return_interval: Literal["open_to_open"] = "open_to_open"
     group_count: Literal[10] = 10
     group_weighting: Literal["equal_weight"] = "equal_weight"

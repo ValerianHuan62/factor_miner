@@ -59,13 +59,40 @@ def portfolio_panel() -> pl.LazyFrame:
     return pl.DataFrame(rows).lazy()
 
 
-def benchmark_returns() -> pl.LazyFrame:
-    return pl.DataFrame(
+def portfolio_market_and_state() -> tuple[pl.LazyFrame, pl.LazyFrame]:
+    """构造覆盖信号至退出的逐交易日开盘和执行状态。"""
+
+    sessions = [date(2026, 7, 6) + timedelta(days=index) for index in range(16)]
+    market = pl.DataFrame([
         {
-            "exit_date": [date(2026, 7, 14), date(2026, 7, 21)],
-            "benchmark_return": [0.01, -0.01],
+            "trade_date": current,
+            "security_id": f"S{number:02d}",
+            "open": 100.0 + day_index * number,
         }
-    ).lazy()
+        for day_index, current in enumerate(sessions)
+        for number in range(1, 11)
+    ]).lazy()
+    state = pl.DataFrame([
+        {
+            "trade_date": current,
+            "security_id": f"S{number:02d}",
+            "valid_for_factor_rank": True,
+            "can_open_long": True,
+            "can_close_long": True,
+        }
+        for current in sessions
+        for number in range(1, 11)
+    ]).lazy()
+    return market, state
+
+
+def benchmark_returns() -> pl.LazyFrame:
+    sessions = [date(2026, 7, 6) + timedelta(days=index) for index in range(16)]
+    return pl.DataFrame({
+        "entry_date": sessions[:-1],
+        "exit_date": sessions[1:],
+        "benchmark_return": [0.0] * (len(sessions) - 1),
+    }).lazy()
 
 
 def ic_panel() -> pl.LazyFrame:
@@ -163,6 +190,7 @@ class PortfolioWorkflowTest(unittest.TestCase):
         state = sealed_state if sealed else generating
         candidate = valid_registered_trusted_candidate()
         barra_weights, benchmark_weights, exposures, factor_returns = barra_frames()
+        portfolio_market, portfolio_state = portfolio_market_and_state()
         return PortfolioSources(
             candidates={candidate.candidate_id: candidate},
             generation_family=family,
@@ -172,6 +200,8 @@ class PortfolioWorkflowTest(unittest.TestCase):
             ),
             generation_seal=seal,
             portfolio_panels={candidate.candidate_id: portfolio_panel()},
+            portfolio_market=portfolio_market,
+            portfolio_state=portfolio_state,
             ic_panels={candidate.candidate_id: ic_panel()},
             benchmark_returns=benchmark_returns(),
             calendar=calendar(),

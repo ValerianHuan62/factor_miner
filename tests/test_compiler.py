@@ -5,6 +5,7 @@ import unittest
 import polars as pl
 
 from factor_miner.compiler import (
+    attach_market_sessions,
     build_polars_expr,
     compile_candidate,
 )
@@ -34,6 +35,63 @@ def synthetic_panel() -> pl.DataFrame:
 
 class CompilerTest(unittest.TestCase):
     """Polars 表达式映射和确定性编译测试。"""
+
+    def test_calendar_delay_uses_exact_session_with_missing_rows(self) -> None:
+        """证券缺行不压缩市场日历，缺少端点不使用更早报价，不串证券。"""
+        from factor_miner.dsl import validate_ast
+        calendar = pl.DataFrame({"date": [date(2020, 1, 1) + timedelta(days=i) for i in range(6)]})
+        panel = pl.DataFrame({"date": [calendar['date'][i] for i in [0,2,3,5,0,1,3,5]],
+                              "asset": ['A']*4+['B']*4,
+                              "close": [10.,12.,13.,15.,100.,101.,103.,105.]})
+        node = FactorNode(op='calendar_delay', args=(FactorNode(op='field',field='close'),), period=2)
+        self.assertEqual(validate_ast(node, {'close'}, ()).lookback, 2)
+        output = attach_market_sessions(panel.lazy(), calendar).with_columns(
+            build_polars_expr(node).alias('lag')).collect().sort('asset','date')
+        self.assertEqual(output['lag'].to_list(), [None,10.,None,13.,None,None,101.,103.])
+        # 缺行保留；未来报价变动不能污染过去的输出。
+        self.assertEqual(output.height, panel.height)
+        changed = panel.with_columns(pl.when(pl.col('date')==calendar['date'][5]).then(9999.).otherwise(pl.col('close')).alias('close'))
+        other = attach_market_sessions(changed.lazy(), calendar).with_columns(build_polars_expr(node).alias('lag')).collect().sort('asset','date')
+        self.assertEqual(other['lag'].to_list(),output['lag'].to_list())
+
+    def test_calendar_context_rejects_ambiguous_or_missing_identity(self) -> None:
+        from factor_miner.dsl import validate_ast
+        from factor_miner.errors import FactorMinerError
+        panel = synthetic_panel()
+        calendar = panel.select('date').unique()
+        with self.assertRaises(ValueError):
+            attach_market_sessions(panel.lazy(),pl.concat([calendar,calendar.head(1)]))
+        with self.assertRaises(ValueError):
+            attach_market_sessions(pl.concat([panel,panel.head(1)]).lazy(),calendar)
+        with self.assertRaises(ValueError):
+            attach_market_sessions(panel.lazy(),calendar.filter(pl.col('date')!=date(2020,1,1)))
+        node=FactorNode(op='calendar_delay',args=(FactorNode(op='field',field='close'),),period=2)
+        with self.assertRaises(pl.exceptions.ColumnNotFoundError):
+            panel.with_columns(build_polars_expr(node).alias('lag'))
+        with self.assertRaises(FactorMinerError):
+            validate_ast(FactorNode(op='calendar_delay',args=node.args,period=-1),{'close'},())
+        with self.assertRaises(FactorMinerError):
+            validate_ast(FactorNode(op='calendar_delay',args=(node,),period=2),{'close'},())
+
+    def test_sign_preserves_flat_prices_and_rejects_nonfinite_input(self) -> None:
+        """平盘是中性方向，缺价和无穷不能变成可排名的方向。"""
+        from factor_miner.dsl import validate_ast
+        node = FactorNode(op="sign", args=(FactorNode(op="field", field="close"),))
+        metadata = validate_ast(node, allowed_fields={"close"}, forbidden_fields=())
+        self.assertEqual(metadata.lookback, 0)
+        values = pl.DataFrame({"close": [-2.0, 0.0, 4.0, None, float("nan"), float("inf"), -float("inf")]})
+        output = values.select(build_polars_expr(node).alias("value"))["value"].to_list()
+        self.assertEqual(output, [-1.0, 0.0, 1.0, None, None, None, None])
+
+    def test_directional_breadth_counts_flat_sessions_and_keeps_missing_window(self) -> None:
+        """涨跌天数统计保留真实平盘；窗口缺价仍无有效输出。"""
+        close = FactorNode(op="field", field="close")
+        node = FactorNode(op="rolling_mean", window=5, args=(FactorNode(op="sign", args=(
+            FactorNode(op="delta", args=(close,), period=1),)),))
+        panel = pl.DataFrame({"asset": ["A"] * 9, "close": [10.0, 11.0, 11.0, 10.0, 12.0, 12.0, None, 13.0, 14.0]})
+        output = panel.select(build_polars_expr(node).alias("value"))["value"].to_list()
+        self.assertAlmostEqual(output[5], .2)
+        self.assertTrue(all(value is None for value in output[6:]))
 
     def test_rolling_mean_matches_manual_grouped_result(self) -> None:
         """验证 rolling_mean 使用每个资产自身的历史窗口。"""

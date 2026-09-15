@@ -8,6 +8,8 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 from factor_miner.canonical import sha256_json
+from factor_miner.construct_validation import ObservableCondition
+from factor_miner.hypothesis_constraints import ConditionContract
 from factor_miner.errors import FactorMinerError, FailureCode
 from factor_miner.llm_online import (
     AgentRole,
@@ -184,6 +186,8 @@ class LogicalEvolutionHypothesisDraft(EvolutionHypothesisDraft):
     """带来源记录任务的逻辑演化假设草案。"""
 
     source_records: tuple[EvolutionSourceRecordPlan, ...] = Field(min_length=1)
+    observable_condition: ObservableCondition | None = Field(default=None, exclude_if=lambda value: value is None)
+    measurement_contract: ConditionContract | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @field_validator("source_records")
     @classmethod

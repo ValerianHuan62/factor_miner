@@ -61,8 +61,8 @@ class PortfolioDataSourceTest(unittest.TestCase):
             align_open_to_open_panel(factor_panel(), bad, SCHEDULE)
         self.assertEqual(context.exception.code, FailureCode.PORTFOLIO_DATA_CONTRACT_INVALID)
 
-    def test_suspended_exit_uses_last_known_open_without_future_selection(self) -> None:
-        """退出日停牌时按截至退出日最后可见价格估值，不读取复牌后的未来价格。"""
+    def test_suspended_exit_cannot_fall_back_to_stale_open(self) -> None:
+        """退出日缺价不能回退旧价，延迟退出必须交给因果状态机。"""
 
         market = pl.DataFrame(
             {
@@ -76,11 +76,8 @@ class PortfolioDataSourceTest(unittest.TestCase):
             }
         ).lazy()
 
-        result = align_open_to_open_panel(factor_panel(), market, SCHEDULE).collect()
-
-        returns = dict(zip(result["security_id"], result["asset_return"], strict=True))
-        self.assertAlmostEqual(returns["A"], -0.1)
-        self.assertAlmostEqual(returns["B"], 0.05)
+        with self.assertRaisesRegex(FactorMinerError, "禁止回退"):
+            align_open_to_open_panel(factor_panel(), market, SCHEDULE)
 
     def test_duplicate_security_date_key_is_rejected(self) -> None:
         duplicate = pl.concat([market_panel().collect(), market_panel().collect()]).lazy()

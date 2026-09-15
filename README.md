@@ -1,111 +1,101 @@
-# Factor Miner：可审计的因子研究系统
+# Factor Miner
 
-Factor Miner 把人工或受控 LLM 提出的金融假设，转换为可审计、可复现的候选因子研究流程。核心链路覆盖因子图谱、假设覆盖分析、研究记忆、自进化候选生成、类型化 DSL、真实数据计算、统计检验、组合诊断、不可变账本和中文 Dashboard。
+Factor Miner 是一个面向 A 股和美股的量化因子研究系统。它将论文或经济学线索转化为可复现的研究流程：登记假设、生成受限公式、在真实数据上计算、验证预测与交易表现、检查冗余，并把审核后的因子交付给下游模型研究。
 
-项目不会让模型自由编写 Python，也不会把行情、标签、统计结果或密钥发送给模型。所有输出只能称为“通过当前协议验证的候选因子”，不能直接视为 Alpha、生产结论或实盘建议。
+项目的目标是提供可追溯的研究候选与诊断证据，不把任何单一回测或审核结果直接表述为实盘 Alpha 或投资建议。
 
-## 核心能力
+## 功能
 
-- **因子图谱**：同时刻画公式结构和实际信号相似性，识别重复簇与研究空白。
-- **假设覆盖图谱**：把覆盖缺口整理为脱敏中文简报，指导模型提出可证伪的新假设。
-- **研究记忆与自进化**：保留成功、失败、拒绝和未执行记录，为下一轮研究提供有边界的上下文。
-- **安全因子 DSL**：只允许白名单类型化 AST，禁止 `eval`、`exec`、动态导入和未来信息。
-- **冻结研究协议**：结果揭晓前固定主张、方向、股票池、标签、预算、HAC 参数和多重检验范围。
-- **可审计评价**：提供 RankIC、HAC t 值、Bonferroni、增量信息、冗余、组合和稳健性诊断。
-- **不可变主存储**：JSON/JSONL 与运行产物保存事实；PostgreSQL 只承载可重建的 Dashboard 读模型。
+- **假设驱动的研究登记**：在评价前冻结论文来源、经济机制、方向、代理、竞争解释、证伪路径、数据口径和研究预算。
+- **安全的因子表达式**：使用类型化 AST 与白名单算子确定性编译公式，拒绝未来函数、标签泄漏、任意 Python 和未声明的数据字段。
+- **可复现的真实数据验证**：在版本化标准面板、交易日历和状态 mask 上计算原始因子，并保存数据、代码和配置身份。
+- **统计与交易诊断**：分别计算 IC、RankIC、HAC 显著性、多重检验结果、分组收益、成交约束、成本与风险指标。
+- **因子冗余与代表库**：先做结构查重，再做逐日截面相关和联合贡献诊断；审核后保留研究代表与同类替补。
+- **结果交付与界面**：JSON/JSONL 和运行产物作为事实源，PostgreSQL 提供可重建读模型，Dashboard 用于查看结果、代表库和研究任务。
+
+## 研究流程
+
+```mermaid
+flowchart LR
+    A[论文与经济学线索] --> B[可证伪假设]
+    B --> C[冻结数据、样本、成本和预算]
+    C --> D[类型化公式与构念校验]
+    D --> E[真实面板上的原始因子计算]
+    E --> F[IC、RankIC 与统计检验]
+    F --> G[因果成交与成本回测]
+    G --> H[冗余与联合贡献诊断]
+    H --> I[审核代表库与结果发布]
+    I --> J[原始因子宽表供下游模型使用]
+```
+
+每个阶段都有明确边界：
+
+1. **假设与可行性**：先确认研究问题能被现有字段与可得时间测量，再登记候选名额。
+2. **公式与原始计算**：公式只使用白名单 AST；原始因子保留原方向和缺失值，不混入标准化、标签或模型预处理。
+3. **预测与交易验证**：预测信息和交易表现分开评价；排序使用信号日信息，成交与终值按冻结规则处理。
+4. **冗余与采纳**：公式哈希、输出相关和联合诊断分别回答结构重复、样本重复和组合增量问题。
+5. **发布与复现**：失败、重复和中断记录不会被删除；候选资格、审核采纳和独立统计确认分别保存。
+
+## 当前研究状态
+
+系统当前保留 A 股和美股共用的研究流程，但默认暂停新增因子探索，重点使用既有代表库开展策略与模型研究。
+
+已完成的 A 股联合冗余诊断从 51 个既有候选中审核采纳了 36 个研究代表，并保留 15 个同类替补。研究代表可以作为后续研究输入，但采纳不改写原候选的独立统计资格；未完成独立经济机制检验的候选仍标记为 `mechanism_unverified`。
+
+## Dashboard 与 API 研究
+
+Dashboard 将候选账本、验证指标、回测报告和代表库组织为可检索界面：
+
+- **看结果**：候选指标、成本与回测诊断、审核状态和详情。
+- **研究代表库**：按市场展示已采纳代表和同类替补，审核状态与独立统计确认分别显示。
+- **API 研究**：用户配置本机 DeepSeek API Key、导入完整计划并显式启动后，页面在后台调用 `run-favor-api`。生成公式仍进入 `register-favor`、`submit-favor` 和 `run-favor` 的正式验证链路。
+
+API 仅发送已授权的公开研究假设与测量合同；私有行情、完整研究结果和 API Key 不进入 Git。具体使用方式见 [Dashboard 的 API 研究与审核状态](docs/runbooks/Dashboard的API研究与审核状态.md)。
+
+## 项目结构
+
+```text
+src/factor_miner/            研究合同、DSL、计算、统计、冗余和 CLI
+src/factor_miner_pg/         PostgreSQL 可重建读模型
+dashboard/                   Streamlit 结果与研究操作界面
+docs/contracts/              数据、统计、预算和跨市场研究合同
+docs/runbooks/               本地运行、Dashboard 与特征交付说明
+tests/                       合成数据和合同回归测试
+```
+
+项目使用 Python 3.12、Polars、Pydantic、Typer、Streamlit 和 PostgreSQL。JSON/JSONL 与不可变运行产物是研究事实源；PostgreSQL 仅承担可重建查询和 Dashboard 展示。核心包不依赖个人数据目录、个人数据库或下游模型项目。
+
+审核后的代表可通过 `export-joint-features` 导出为版本化原始 Parquet 宽表及来源清单，供下游构建 Dataset 和训练模型。宽表不含标签、标准化或模型预处理，详见 [因子宽表导出与模型接入](docs/runbooks/因子宽表导出与模型接入.md)。
 
 ## 快速开始
 
-完整系统需要 Python 3.12、`uv`、PostgreSQL 和 Streamlit Dashboard。PostgreSQL 是可重建读模型，JSON/JSONL 与运行产物仍是研究事实源；数据库不可用时不得假装研究已经完整发布。
+需要 Python 3.12 和 `uv`：
 
 ```bash
 git clone https://github.com/ValerianHuan62/factor_miner.git
 cd factor_miner
 uv sync --frozen
-export FM_DASHBOARD_DSN='postgresql://factor_miner:factor_miner_local@127.0.0.1:5432/factor_miner'
+
+# 公开合成样例：不会启动真实研究
 uv run factor-miner validate-spec examples/candidates/momentum_20d.json
 uv run factor-miner compile-spec examples/candidates/momentum_20d.json
 uv run python -m unittest tests.test_synthetic_e2e -v
-```
 
-以上命令会校验并编译一个合成候选，再运行最小端到端测试。仓库同时提供 `make demo` 快捷命令。查看完整 CLI：
-
-```bash
+# 常用入口
 make cli
+make test
+make dashboard
 ```
 
-常用开发命令：
-
-```bash
-make test                 # 完整合成与合同测试
-make dashboard            # 启动本地 Dashboard，需要 PostgreSQL DSN
-```
-
-如果本机没有 PostgreSQL，可用仓库提供的容器配置启动一个本地实例：
-
-```bash
-docker compose up -d postgres
-```
-
-## 使用门槛
-
-| 能力 | 硬性要求 |
-| --- | --- |
-| 安装与合成测试 | Python 3.12、`uv`；测试不读取真实数据或密钥 |
-| 完整系统 | PostgreSQL DSN、Streamlit Dashboard；依赖已包含在默认安装中 |
-| 受控 LLM 假设生成 | API Key、脱敏请求、精确请求哈希授权和人工审批 |
-| 真实跨市场研究 | 标准面板发布、状态 mask、交易日历、标签、清单哈希、截止日和独立产物目录 |
-
-真实研究可在本地电脑或服务器运行，不要求 SSH、Linux、QuantLake 或个人数据库。A 股、美股和其他市场都通过同一标准面板合同接入；QuantLake 只是可选的 A 股上游。缺少数据身份、字段、状态 mask、配置哈希或截止日一致性时，系统按设计硬失败。
-
-## 接入自己的数据
-
-输入 CSV 或 Parquet 至少包含 `date, asset, open, high, low, close, volume`。若数据已处理交易状态，可额外提供 `valid_for_factor_compute`、`valid_for_factor_rank`、`valid_for_trading` 三个 Boolean mask；否则必须显式确认全部记录可用于演示：
-
-```bash
-uv run factor-miner data prepare-local examples/data/us_equities_sample.csv \
-  --output-root .local/releases/us-sample \
-  --artifact-root .local/artifacts \
-  --adjustment-convention split_adjusted \
-  --calendar-version us-sample-v1 \
-  --assume-tradable
-```
-
-命令会生成标准 Parquet 三表、内容哈希清单和 `runtime.env`。正式研究应由数据适配器提供真实的停牌、退市、可交易状态，而不是使用 `--assume-tradable`。
-
-## 项目结构
-
-```text
-factor_miner/
-├── src/factor_miner/    # DSL、计算、评价、图谱、LLM 编排、研究记忆与账本
-├── dashboard/           # Streamlit 中文只读 Dashboard 与受控研究台
-├── configs/             # 无密钥配置模板
-├── examples/            # 可公开运行的合成输入
-├── deploy/              # 可选的 Linux systemd 部署模板
-├── docs/                # 研究协议、数据合同和运行手册
-├── tests/               # 纯合成与合同回归测试
-├── ARCHITECTURE.md      # 成品架构与数据流
-├── pyproject.toml       # 包元数据与依赖
-└── uv.lock              # 冻结依赖
-```
-
-## 研究边界
-
-- 候选必须在读取结果前冻结金融主张、预期方向、机制、代理、竞争解释、失效方式和证伪路径。
-- 原始因子、预处理、标签、评价和组合构建严格分层；基本面按可得日对齐。
-- 失败、中断、重复和表达式错误仍占用预登记试验名额，不会从多重检验分母中消失。
-- 相关性不等于因果机制，可见区间通过不等于密封样本外通过，统计显著不等于扣除成本后可交易。
-- 真实数据、运行配置、账本、模型、密钥和服务器路径解析结果不得进入 Git。
+真实研究需要版本化 CSV/Parquet 面板、交易日历、状态 mask、复权口径和独立产物目录。仓库不包含私有行情、真实候选、完整研究产物、模型或密钥。运行细节见 [本地与服务器研究运行](docs/runbooks/本地与服务器研究运行.md)。
 
 ## 文档
 
-- [系统架构](ARCHITECTURE.md)
-- [因子研究协议](docs/constraints/FACTOR_RESEARCH_PROTOCOL.md)
-- [研究治理](docs/constraints/RESEARCH_GOVERNANCE.md)
-- [标准面板数据合同](docs/contracts/标准面板数据合同.md)
-- [本地与服务器研究运行](docs/runbooks/本地与服务器研究运行.md)
-- [Dashboard 自主研究](docs/runbooks/Dashboard自主研究运行.md)
+- [完整流程与日常使用](docs/当前流程与日常使用.md)：端到端研究流程与日常入口。
+- [系统架构](ARCHITECTURE.md)：模块职责、数据流和存储边界。
+- [Dashboard 的 API 研究与审核状态](docs/runbooks/Dashboard的API研究与审核状态.md)：网页研究任务、密钥、状态和运维说明。
+- [因子宽表导出与模型接入](docs/runbooks/因子宽表导出与模型接入.md)：审核代表的版本化特征交付合同。
+- [项目面试讲解](docs/项目面试讲解.md)：独立的面试介绍、常见追问和演示顺序。
+- [文档索引](docs/README.md)：全部研究合同、运行手册和历史设计。
 
-## 许可证
-
-本项目采用 [MIT License](LICENSE)。
+项目采用 [MIT 许可证](LICENSE)。

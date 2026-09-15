@@ -49,6 +49,17 @@ def semantic_registry() -> FieldAvailabilityRegistry:
 class DslSemanticTest(unittest.TestCase):
     """可执行但单位错误的表达式必须在编译前失败。"""
 
+    def test_partial_correlation_and_new_temporal_units(self) -> None:
+        price = FactorNode(op="field", field="price_close")
+        amount = FactorNode(op="field", field="traded_value")
+        lag = FactorNode(op="calendar_delay", args=(price,), period=1)
+        self.assertEqual(analyse_semantic_type(lag, semantic_registry()).unit_dimension, "price")
+        for expression in [FactorNode(op="sign", args=(price,)),
+                           FactorNode(op="rolling_partial_corr", args=(price, amount, lag), window=20)]:
+            analysis = analyse_semantic_type(expression, semantic_registry())
+            self.assertEqual(analysis.unit_dimension, "dimensionless")
+            self.assertEqual(analysis.earliest_decision_time, "after_close_t")
+
     def test_add_rejects_incompatible_units(self) -> None:
         node = FactorNode(
             op="add",

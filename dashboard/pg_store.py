@@ -333,7 +333,7 @@ def _portfolio_daily_rows(
 class PostgresDashboardStore:
     """把正式文件产物投影为简洁的人类可读索引。"""
 
-    def __init__(self, dsn: str) -> None:
+    def __init__(self, dsn: str, *, market_id: str = "a_share") -> None:
         if not dsn.strip():
             raise FactorMinerError(
                 FailureCode.RUNTIME_BOUNDARY_ERROR,
@@ -348,6 +348,12 @@ class PostgresDashboardStore:
             ) from None
         self._psycopg = psycopg
         self._dsn = dsn
+        self._market_id = market_id.strip()
+        if not self._market_id:
+            raise FactorMinerError(
+                FailureCode.RUNTIME_BOUNDARY_ERROR,
+                "Dashboard market_id 不能为空",
+            )
 
     def replace_run_snapshot(self, run_id: str, snapshot: dict[str, object]) -> None:
         """只投影因子说明与最新完整指标；图表数据仍留在正式文件。"""
@@ -376,11 +382,204 @@ class PostgresDashboardStore:
                 """
                 SELECT source_candidate_id, factor_id
                 FROM factor_miner_internal.factor_id_map
-                WHERE factor_id ~ '^huan[0-9]{3,}$'
+                WHERE market_id = %s
+                  AND factor_id ~ '^huan[0-9]{3,}$'
                 ORDER BY substring(factor_id FROM 5)::integer
-                """
+                """,
+                (self._market_id,),
             ).fetchall()
         return {str(source_id): str(factor_id) for source_id, factor_id in rows}
+
+    def load_factor_metrics_detail(self) -> list[dict[str, object]]:
+        """原指标读取完成后，按显式上下文附加状态分类。"""
+        rows = self._load_factor_metrics_detail()
+        from dashboard.market_profiles import profile_by_id
+        from factor_miner_pg.regime_store import attach_pg_records
+        profile = profile_by_id(self._market_id)
+        context = profile.regime_context_id if profile else None
+        if not context:
+            from factor_miner.regime import record_fields
+            return [{**row,**record_fields(None),'regime_record':None} for row in rows]
+        with self._psycopg.connect(self._dsn) as connection:
+            enriched = attach_pg_records(connection, rows, self._market_id, context)
+            if profile.regime_manifest_path:
+                from factor_miner.regime import load_manifest, file_sha
+                manifest = load_manifest(profile.regime_manifest_path,self._market_id)
+                digests = connection.execute('SELECT DISTINCT manifest_sha256 FROM public.factor_regime_current WHERE market_id=%s AND context_id=%s',(self._market_id,context)).fetchall()
+                if manifest.context_id != context or digests != [(file_sha(profile.regime_manifest_path),)]:
+                    raise ValueError('状态文件与 PostgreSQL 发布不同步，请重新投影')
+            return enriched
+
+    def _load_factor_metrics_detail(self) -> list[dict[str, object]]:
+        """读取因子定义与最新聚合指标联查视图，不读取逐日或个股数据。"""
+
+        columns = (
+            "market_id",
+            "factor_id",
+            "hypothesis",
+            "mechanism",
+            "formula",
+            "calculation",
+            "discovered_direction",
+            "direction_relation",
+            "status",
+            "horizon_days",
+            "valid_dates",
+            "coverage_mean",
+            "ic_mean",
+            "rank_ic_mean",
+            "ic_std",
+            "rank_ic_std",
+            "ic_ir",
+            "rank_ic_ir",
+            "ic_hac_t",
+            "rank_ic_hac_t",
+            "annualized_return",
+            "max_drawdown",
+            "sharpe",
+            "information_ratio",
+            "has_portfolio",
+            "evaluation_scope",
+            "run_id",
+            "evaluated_at",
+        )
+        with self._psycopg.connect(self._dsn) as connection:
+            if self._market_id == "us_equity" and connection.execute(
+                "SELECT to_regclass('public.screened_factors')"
+            ).fetchone()[0] is not None:
+                from dashboard.screened_store import metric_rows
+                return metric_rows(connection)
+            rows = connection.execute(
+                """
+                SELECT
+                    market_id, factor_id, hypothesis, mechanism, formula, calculation,
+                    discovered_direction, direction_relation, status,
+                    horizon_days, valid_dates, coverage_mean,
+                    ic_mean, rank_ic_mean, ic_std, rank_ic_std,
+                    ic_ir, rank_ic_ir, ic_hac_t, rank_ic_hac_t,
+                    annualized_return, max_drawdown, sharpe,
+                    information_ratio, has_portfolio, evaluation_scope,
+                    run_id, evaluated_at
+                FROM public.factor_metrics_detail
+                WHERE market_id = %s
+                ORDER BY substring(factor_id FROM 5)::integer
+                """,
+                (self._market_id,),
+            ).fetchall()
+            result = [dict(zip(columns, row, strict=True)) for row in rows]
+            if self._market_id == "us_equity" and connection.execute(
+                "SELECT to_regclass('factor_miner_internal.causal_reports')"
+            ).fetchone()[0] is not None:
+                reports = connection.execute("""SELECT DISTINCT ON (factor_id)
+                    factor_id, report->'evaluation', report->'reference_metrics',
+                    report->'execution_audit'->'target'->>'valuation_status',
+                    report->'execution_audit'->'benchmark'->>'valuation_status', run_id, created_at
+                    FROM factor_miner_internal.causal_reports ORDER BY factor_id, created_at DESC""").fetchall()
+                from dashboard.accounting_projection import overlay_accounting_metrics
+
+                result = overlay_accounting_metrics(result, reports)
+        return result
+
+    def replace_visible_candidate_evaluations(
+        self,
+        run_id: str,
+        candidates: Iterable[dict[str, object]],
+    ) -> dict[str, str]:
+        """投影仅完成开发期 IC/HAC 的候选，不补造组合回测指标。"""
+
+        rows = tuple(dict(row) for row in candidates)
+        source_ids = tuple(str(row["source_candidate_id"]) for row in rows)
+        with self._psycopg.connect(self._dsn) as connection:
+            aliases = self._allocate_candidate_references(connection, source_ids)
+            for row in rows:
+                source_id = str(row["source_candidate_id"])
+                factor_id = aliases[source_id]
+                existing_market = connection.execute(
+                    "SELECT market_id FROM public.factors WHERE factor_id = %s",
+                    (factor_id,),
+                ).fetchone()
+                if existing_market is not None and str(existing_market[0]) != self._market_id:
+                    raise FactorMinerError(
+                        FailureCode.LEDGER_CORRUPT,
+                        f"因子编号 {factor_id} 已属于其他市场",
+                    )
+                connection.execute(
+                    """
+                    INSERT INTO public.factors (
+                        market_id, factor_id, hypothesis, mechanism,
+                        discovered_direction, direction_relation, formula,
+                        calculation, hypothesis_direction, category,
+                        trading_timing, status
+                    ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    ON CONFLICT (factor_id) DO UPDATE SET
+                        hypothesis = EXCLUDED.hypothesis,
+                        mechanism = EXCLUDED.mechanism,
+                        discovered_direction = EXCLUDED.discovered_direction,
+                        direction_relation = EXCLUDED.direction_relation,
+                        formula = EXCLUDED.formula,
+                        calculation = EXCLUDED.calculation,
+                        hypothesis_direction = EXCLUDED.hypothesis_direction,
+                        category = EXCLUDED.category,
+                        trading_timing = EXCLUDED.trading_timing,
+                        status = EXCLUDED.status,
+                        updated_at = NOW()
+                    """,
+                    (
+                        self._market_id,
+                        factor_id,
+                        row["hypothesis"],
+                        row["mechanism"],
+                        row["discovered_direction"],
+                        row["direction_relation"],
+                        row["formula"],
+                        row["calculation"],
+                        row["hypothesis_direction"],
+                        row["category"],
+                        row["trading_timing"],
+                        row["status"],
+                    ),
+                )
+                connection.execute(
+                    """
+                    INSERT INTO public.visible_candidate_evaluations (
+                        market_id, factor_id, run_id, evaluation_scope,
+                        horizon_days, valid_dates, coverage_mean,
+                        rank_ic_mean, rank_ic_std, rank_ic_ir,
+                        rank_ic_hac_t, raw_p_value, bonferroni_p_value,
+                        evaluated_at
+                    ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    ON CONFLICT (market_id, factor_id) DO UPDATE SET
+                        run_id = EXCLUDED.run_id,
+                        evaluation_scope = EXCLUDED.evaluation_scope,
+                        horizon_days = EXCLUDED.horizon_days,
+                        valid_dates = EXCLUDED.valid_dates,
+                        coverage_mean = EXCLUDED.coverage_mean,
+                        rank_ic_mean = EXCLUDED.rank_ic_mean,
+                        rank_ic_std = EXCLUDED.rank_ic_std,
+                        rank_ic_ir = EXCLUDED.rank_ic_ir,
+                        rank_ic_hac_t = EXCLUDED.rank_ic_hac_t,
+                        raw_p_value = EXCLUDED.raw_p_value,
+                        bonferroni_p_value = EXCLUDED.bonferroni_p_value,
+                        evaluated_at = EXCLUDED.evaluated_at
+                    """,
+                    (
+                        self._market_id,
+                        factor_id,
+                        run_id,
+                        row["evaluation_scope"],
+                        row["horizon_days"],
+                        row["valid_dates"],
+                        row["coverage_mean"],
+                        row["rank_ic_mean"],
+                        row["rank_ic_std"],
+                        row["rank_ic_ir"],
+                        row["rank_ic_hac_t"],
+                        row["raw_p_value"],
+                        row["bonferroni_p_value"],
+                        row["evaluated_at"],
+                    ),
+                )
+        return aliases
 
     def project_control_state(
         self,
@@ -403,10 +602,10 @@ class PostgresDashboardStore:
             connection.execute(
                 """
                 INSERT INTO research_runs (
-                    run_id, stage, status, hypothesis_count, factor_count,
+                    run_id, market_id, stage, status, hypothesis_count, factor_count,
                     error_message, started_at, finished_at, updated_at
                 ) VALUES (
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
                 )
                 ON CONFLICT (run_id) DO UPDATE SET
                     stage = EXCLUDED.stage,
@@ -419,6 +618,7 @@ class PostgresDashboardStore:
                 """,
                 (
                     state.run_id,
+                    self._market_id,
                     state.stage_label,
                     status,
                     len(hypotheses.hypotheses) if hypotheses else 0,
@@ -528,7 +728,9 @@ class PostgresDashboardStore:
         with self._psycopg.connect(self._dsn) as connection:
             row = connection.execute(
                 "SELECT " + ", ".join(columns)
-                + " FROM research_runs ORDER BY updated_at DESC LIMIT 1"
+                + " FROM research_runs WHERE market_id = %s "
+                  "ORDER BY updated_at DESC LIMIT 1",
+                (self._market_id,),
             ).fetchone()
         return dict(zip(columns, row, strict=True)) if row is not None else None
 
@@ -591,8 +793,8 @@ class PostgresDashboardStore:
                 )
             _target_long_metric_row(snapshot, candidate_id)
 
-    @staticmethod
     def _allocate_candidate_references(
+        self,
         connection: Any,
         source_candidate_ids: Iterable[str],
     ) -> dict[str, str]:
@@ -607,9 +809,15 @@ class PostgresDashboardStore:
         )
         maximum_row = connection.execute(
             """
-            SELECT MAX(substring(factor_id FROM 5)::integer)
-            FROM factor_miner_internal.factor_id_map
-            WHERE factor_id ~ '^huan[0-9]{3,}$'
+            SELECT MAX(value) FROM (
+                SELECT substring(factor_id FROM 5)::integer AS value
+                FROM factor_miner_internal.factor_id_map
+                WHERE factor_id ~ '^huan[0-9]{3,}$'
+                UNION ALL
+                SELECT substring(factor_id FROM 5)::integer AS value
+                FROM public.factors
+                WHERE factor_id ~ '^huan[0-9]{3,}$'
+            ) AS ids
             """
         ).fetchone()
         maximum = int(maximum_row[0] or 0) if maximum_row is not None else 0
@@ -619,10 +827,11 @@ class PostgresDashboardStore:
                 """
                 SELECT factor_id
                 FROM factor_miner_internal.factor_id_map
-                WHERE source_candidate_id = %s
+                WHERE market_id = %s
+                  AND source_candidate_id = %s
                   AND factor_id ~ '^huan[0-9]{3,}$'
                 """,
-                (source_id,),
+                (self._market_id, source_id),
             ).fetchone()
             if existing is not None:
                 reference = str(existing[0])
@@ -640,11 +849,11 @@ class PostgresDashboardStore:
             connection.execute(
                 """
                 INSERT INTO factor_miner_internal.factor_id_map
-                    (source_candidate_id, factor_id)
-                VALUES (%s, %s)
-                ON CONFLICT (source_candidate_id) DO NOTHING
+                    (market_id, source_candidate_id, factor_id)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (market_id, source_candidate_id) DO NOTHING
                 """,
-                (source_id, reference),
+                (self._market_id, source_id, reference),
             )
         return aliases
 
@@ -855,8 +1064,12 @@ class PostgresDashboardStore:
                 (run_id, str(artifact["relative_path"]), str(artifact["sha256"]), int(artifact["size_bytes"])),
             )
 
-    @staticmethod
-    def _project_candidates(connection: Any, run_id: str, snapshot: dict[str, object]) -> None:
+    def _project_candidates(
+        self,
+        connection: Any,
+        run_id: str,
+        snapshot: dict[str, object],
+    ) -> None:
         """投影因子目录；描述性文字统一转换为中文。"""
 
         for candidate_id in _candidate_ids(snapshot):
@@ -894,10 +1107,10 @@ class PostgresDashboardStore:
             connection.execute(
                 """
                 INSERT INTO factors (
-                    factor_id, hypothesis, mechanism, discovered_direction,
+                    market_id, factor_id, hypothesis, mechanism, discovered_direction,
                     direction_relation, formula, calculation,
                     hypothesis_direction, category, trading_timing, status
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (factor_id) DO UPDATE SET
                     hypothesis = EXCLUDED.hypothesis,
                     mechanism = EXCLUDED.mechanism,
@@ -912,6 +1125,7 @@ class PostgresDashboardStore:
                     updated_at = NOW()
                 """,
                 (
+                    self._market_id,
                     reference_id,
                     str(definition.get("hypothesis_claim") or "尚未提供中文假设"),
                     str(definition.get("hypothesis_mechanism") or "机制尚未独立验证"),

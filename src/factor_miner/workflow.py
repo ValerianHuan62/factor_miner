@@ -6,6 +6,7 @@ from dataclasses import asdict, dataclass
 from datetime import date, datetime
 from enum import StrEnum
 import hashlib
+import json
 import os
 from pathlib import Path
 from typing import Any, Callable, Mapping
@@ -93,6 +94,52 @@ from factor_miner.portfolio_schema import (
 from factor_miner.portfolio_statistics import calculate_portfolio_metrics
 from factor_miner.trading_schedule import RebalanceWindow
 from factor_miner.statistics import HacInference, hac_mean_test
+from factor_miner.construct_validation import ObservableCondition, validate_construct
+
+
+def _gamma_input_fields(plans, candidates):
+    """新合同的当期状态代理也必须从显式输入发布读取，不能使用标签作代理。"""
+    from factor_miner.hypothesis_constraints import CompiledGamma
+    from factor_miner.dsl import validate_ast
+    fields = {field for plan in plans.values() for field in plan.required_fields}
+    for candidate in candidates.values():
+        encoded = candidate.spec.provenance.get("gamma_json")
+        if encoded:
+            gamma = CompiledGamma.model_validate_json(encoded)
+            for measurement in gamma.condition.state_measurements:
+                fields.update(validate_ast(measurement.expression, gamma.allowed_fields, ()).required_fields)
+    return tuple(sorted(fields))
+
+
+def _shared_construct_audit(plan, candidate, input_frame, raw_path, campaign):
+    """API 候选与直接提交候选共用构念判定；旧缺失合同明确保留证据不足。"""
+    condition_json = candidate.spec.provenance.get("observable_condition_json")
+    condition = ObservableCondition.model_validate_json(condition_json) if condition_json else None
+    audit = validate_construct(plan.expression, condition)
+    encoded = candidate.spec.provenance.get("gamma_json")
+    if encoded:
+        from factor_miner.hypothesis_constraints import CompiledGamma
+        from factor_miner.favor_validation import validate_empirical_construct, ConstructPolicy
+        gamma = CompiledGamma.model_validate_json(encoded)
+        empirical = validate_empirical_construct(pl.read_parquet(raw_path), input_frame, input_frame,
+            gamma.condition, campaign.visible_start, campaign.visible_end, ConstructPolicy())
+        audit["empirical"] = empirical
+        if audit["status"] != "基础检验符合" or not empirical["passed"]:
+            audit["status"] = "偏离"
+    return audit
+
+
+def _gamma_warmup(plans, candidates):
+    """状态测量可能比因子本身需要更长预热，必须在请求输入前声明。"""
+    from factor_miner.hypothesis_constraints import CompiledGamma
+    from factor_miner.dsl import validate_ast
+    windows = [p.required_lookback for p in plans.values()]
+    for candidate in candidates.values():
+        encoded = candidate.spec.provenance.get("gamma_json")
+        if encoded:
+            gamma = CompiledGamma.model_validate_json(encoded)
+            windows.extend(validate_ast(m.expression, gamma.allowed_fields, ()).lookback for m in gamma.condition.state_measurements)
+    return max(windows)
 
 
 class CandidateTerminalStatus(StrEnum):
@@ -136,6 +183,8 @@ class PortfolioSources:
     generation_projection: VerifiedDiscoveryProjection
     generation_seal: RegisteredGenerationSeal
     portfolio_panels: Mapping[str, pl.LazyFrame]
+    portfolio_market: pl.LazyFrame
+    portfolio_state: pl.LazyFrame
     ic_panels: Mapping[str, pl.LazyFrame]
     benchmark_returns: pl.LazyFrame
     calendar: pl.DataFrame
@@ -350,6 +399,7 @@ def resolved_trusted_evaluation_campaign(
     return CampaignSpec(
         visible_start=campaign.visible_start,
         visible_end=campaign.visible_end,
+        next_split_start=campaign.next_split_start,
         candidate_ids=campaign.candidate_ids,
         max_hypotheses=family.spec.global_hypothesis_budget,
         alpha=policy.alpha,
@@ -481,10 +531,8 @@ def run_trusted_visible_campaign(
     request = FactorInputRequest(
         start=campaign.visible_start,
         end=campaign.visible_end,
-        required_fields=tuple(
-            sorted({field for plan in plans.values() for field in plan.required_fields})
-        ),
-        warmup_observations=max(plan.required_lookback for plan in plans.values()),
+        required_fields=_gamma_input_fields(plans, candidates),
+        warmup_observations=_gamma_warmup(plans, candidates),
     )
     input_provenance = input_source.inspect_inputs()
     input_frame = input_source.scan_inputs(request).collect()
@@ -505,6 +553,10 @@ def run_trusted_visible_campaign(
             publisher.path(f"{base}/raw_factor.parquet"),
         )
         artifacts[candidate_id] = artifact
+        construct = _shared_construct_audit(plan, candidates[candidate_id], input_frame, artifact.artifact_path, campaign)
+        publisher.write_json(f"{base}/construct_validation.json", construct)
+        if candidates[candidate_id].spec.provenance.get("gamma_json") and construct["status"] != "基础检验符合":
+            raise ValueError("新 Γ 候选未通过共同构念入口；不得按旧 LLM judge 结果放行")
         raw_frames[candidate_id] = pl.read_parquet(artifact.artifact_path).select(
             ["date", "asset", "raw_factor"]
         )
@@ -793,18 +845,8 @@ def run_incremental_visible_campaign(
     request = FactorInputRequest(
         start=campaign.visible_start,
         end=campaign.visible_end,
-        required_fields=tuple(
-            sorted(
-                {
-                    field
-                    for plan in plans.values()
-                    for field in plan.required_fields
-                }
-            )
-        ),
-        warmup_observations=max(
-            plan.required_lookback for plan in plans.values()
-        ),
+        required_fields=_gamma_input_fields(plans, candidates),
+        warmup_observations=_gamma_warmup(plans, candidates),
     )
     input_provenance = input_source.inspect_inputs()
     input_frame = input_source.scan_inputs(request).collect()
@@ -829,6 +871,10 @@ def run_incremental_visible_campaign(
             publisher.path(f"{base}/raw_factor.parquet"),
         )
         artifacts[candidate_id] = artifact
+        construct = _shared_construct_audit(plan, candidates[candidate_id], input_frame, artifact.artifact_path, campaign)
+        publisher.write_json(f"{base}/construct_validation.json", construct)
+        if candidates[candidate_id].spec.provenance.get("gamma_json") and construct["status"] != "基础检验符合":
+            raise ValueError("新 Γ 候选未通过共同构念入口；不得按旧 LLM judge 结果放行")
         raw_frames[candidate_id] = pl.read_parquet(
             artifact.artifact_path
         ).select(["date", "asset", "raw_factor"])
@@ -2113,6 +2159,8 @@ def run_visible_portfolio_campaign(
             try:
                 backtest = run_portfolio_backtest(
                     sources.portfolio_panels[candidate_id],
+                    sources.portfolio_market,
+                    sources.portfolio_state,
                     sources.benchmark_returns,
                     sources.schedule,
                     portfolio_policy,

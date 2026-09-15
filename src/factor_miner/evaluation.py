@@ -10,6 +10,7 @@ import polars as pl
 from pydantic import BaseModel, ConfigDict, Field, FiniteFloat
 
 from factor_miner.errors import FactorMinerError, FailureCode
+from factor_miner.label_dataset import purge_label_event_overlap
 from factor_miner.schema import CampaignSpec
 
 
@@ -67,6 +68,9 @@ class EvaluationMetrics(BaseModel):
     eligible_count_max: int = Field(default=0, ge=0)
     median_factor_coverage: FiniteFloat = Field(default=0.0, ge=0, le=1)
     median_label_coverage: FiniteFloat = Field(default=0.0, ge=0, le=1)
+    event_purge_next_split_start: date | None = None
+    event_purge_removed_rows: int = Field(default=0, ge=0)
+    event_purge_removed_signal_dates: int = Field(default=0, ge=0)
 
     @property
     def rank_ic_values(self) -> tuple[float, ...]:
@@ -102,6 +106,8 @@ def evaluate_rank_ic(
         campaign.rank_mask_column,
         campaign.label_column,
     }
+    if campaign.next_split_start is not None:
+        required.add("label_exit_date")
     missing = required - set(data.columns)
     if missing:
         raise FactorMinerError(
@@ -118,6 +124,12 @@ def evaluate_rank_ic(
             closed="both",
         )
     ).sort(["date", "asset"])
+    purge_audit = None
+    if campaign.next_split_start is not None:
+        visible, purge_audit = purge_label_event_overlap(
+            visible,
+            next_split_start=campaign.next_split_start,
+        )
     dates = visible.get_column("date").unique().sort().to_list()
     daily = tuple(
         _daily_rank_ic(visible.filter(pl.col("date") == current), current, campaign, factor_column)
@@ -132,6 +144,13 @@ def evaluate_rank_ic(
         valid_dates=valid_dates,
         invalid_dates=len(daily) - valid_dates,
         median_coverage=float(median(coverages)) if coverages else 0.0,
+        event_purge_next_split_start=(
+            purge_audit.next_split_start if purge_audit is not None else None
+        ),
+        event_purge_removed_rows=(purge_audit.removed_rows if purge_audit is not None else 0),
+        event_purge_removed_signal_dates=(
+            purge_audit.removed_signal_dates if purge_audit is not None else 0
+        ),
         **diagnostics,
     )
 

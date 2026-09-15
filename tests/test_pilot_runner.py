@@ -113,6 +113,12 @@ def _synthetic_frame() -> pl.DataFrame:
                     "valid_for_trading": not (
                         asset == "B" and day_index == 45
                     ),
+                    "can_open_long": not (
+                        asset == "B" and day_index == 45
+                    ),
+                    "can_close_long": not (
+                        asset == "B" and day_index == 45
+                    ),
                 }
             )
     return pl.DataFrame(rows)
@@ -494,9 +500,20 @@ class PilotRunnerTest(unittest.TestCase):
                 "signal_date": [row["signal_date"] for row in signal_rows],
                 "security_id": [row["security_id"] for row in signal_rows],
                 "valid_for_factor_rank": [True] * len(signal_rows),
-                "valid_for_trading": [True] * len(signal_rows),
             }
         )
+        execution_dates = sorted({value for window in schedule for value in (window.signal_date, window.entry_date, window.exit_date)})
+        execution_state = pl.DataFrame([
+            {
+                "signal_date": current,
+                "security_id": asset,
+                "valid_for_factor_rank": True,
+                "can_open_long": True,
+                "can_close_long": True,
+            }
+            for current in execution_dates
+            for asset in assets
+        ])
         panel = FixedSignalPanel(
             candidate_id="pilot_fixed_001",
             compiler_candidate_id="cand_" + "a" * 24,
@@ -506,14 +523,15 @@ class PilotRunnerTest(unittest.TestCase):
             rank_mask=masks.select(
                 ["signal_date", "security_id", "valid_for_factor_rank"]
             ),
-            trading_mask=masks.select(
-                ["signal_date", "security_id", "valid_for_trading"]
+            trading_mask=execution_state.select(
+                [
+                    "signal_date", "security_id", "valid_for_factor_rank",
+                    "can_open_long", "can_close_long",
+                ]
             ),
         )
         market_rows = []
-        for day_index, current in enumerate(
-            [date(2026, 1, 6), date(2026, 1, 13), date(2026, 1, 20), date(2026, 1, 27)]
-        ):
+        for day_index, current in enumerate(execution_dates):
             for index, asset in enumerate(assets):
                 market_rows.append(
                     {
@@ -525,13 +543,8 @@ class PilotRunnerTest(unittest.TestCase):
         market = pl.DataFrame(market_rows).lazy()
         index_panel = pl.DataFrame(
             {
-                "trade_date": [
-                    date(2026, 1, 6),
-                    date(2026, 1, 13),
-                    date(2026, 1, 20),
-                    date(2026, 1, 27),
-                ],
-                "open": [3000.0, 3010.0, 3020.0, 3030.0],
+                "trade_date": execution_dates,
+                "open": [3000.0 + 10.0 * index for index in range(len(execution_dates))],
             }
         ).lazy()
         benchmark = build_benchmark_open_to_open_returns(index_panel, schedule)
@@ -584,6 +597,7 @@ class PilotRunnerTest(unittest.TestCase):
                     "asset": f"A{index:02d}",
                     "factor_value": float(index),
                     "valid_for_factor_rank": True,
+                    "label_exit_date": current + timedelta(days=5),
                 }
                 row.update(
                     {
@@ -667,7 +681,9 @@ class PilotRunnerTest(unittest.TestCase):
             pl.lit(True).alias("valid_for_factor_rank")
         )
         trading = signal.select(["signal_date", "security_id"]).with_columns(
-            pl.lit(True).alias("valid_for_trading")
+            pl.lit(True).alias("valid_for_factor_rank"),
+            pl.lit(True).alias("can_open_long"),
+            pl.lit(True).alias("can_close_long"),
         )
         panels = tuple(
             FixedSignalPanel(

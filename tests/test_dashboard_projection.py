@@ -129,12 +129,14 @@ class DashboardProjectionTest(unittest.TestCase):
                 if "MAX" in normalized:
                     return Cursor((15,))
                 if "source_candidate_id = %s" in normalized:
-                    if params == ("coverage_outcome_llm:001",):
+                    if params == ("a_share", "coverage_outcome_llm:001"):
                         return Cursor(("huan016",))
                     return Cursor(None)
                 return Cursor(None)
 
-        aliases = PostgresDashboardStore._allocate_candidate_references(
+        store = PostgresDashboardStore.__new__(PostgresDashboardStore)
+        store._market_id = "a_share"
+        aliases = store._allocate_candidate_references(
             Connection(),
             ("coverage_outcome_llm:001", "coverage_outcome_llm:002"),
         )
@@ -446,9 +448,9 @@ class DashboardProjectionTest(unittest.TestCase):
         factor_params = next(
             params for sql, params in connection.statements if "INSERT INTO factors" in sql
         )
-        self.assertEqual(factor_params[3], "负向")
-        self.assertEqual(factor_params[4], "与假设相反")
-        self.assertEqual(factor_params[8], "未分类")
+        self.assertEqual(factor_params[4], "负向")
+        self.assertEqual(factor_params[5], "与假设相反")
+        self.assertEqual(factor_params[9], "未分类")
         metrics_sql, metrics_params = next(
             (sql, params)
             for sql, params in connection.statements

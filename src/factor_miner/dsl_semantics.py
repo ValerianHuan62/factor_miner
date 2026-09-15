@@ -100,29 +100,62 @@ def _analyse(
     ):
         _type_error("AST 依赖存在首版不支持的可得时点")
 
-    if node.op in {"add", "sub"}:
+    if node.op == "hlc_spread":
+        if len(children) != 5 or any(child.unit != _Unit.base("price") for child in children):
+            _type_error("hlc_spread 需要五个相容价格参数：前收盘、前高低价和当日高低价")
+        unit = _Unit.base("dimensionless")
+    elif node.op in {"add", "sub", "gt"}:
         if len(children) != 2 or children[0].unit != children[1].unit:
             _type_error(f"算子 {node.op} 要求两个参数单位相容")
-        unit = children[0].unit
-    elif node.op == "mul":
+        unit = _Unit.base("dimensionless") if node.op == "gt" else children[0].unit
+    elif node.op in {"mul", "rolling_cov"}:
         if len(children) != 2:
-            _type_error("mul 需要两个参数")
+            _type_error(f"{node.op} 需要两个参数")
         unit = children[0].unit.multiply(children[1].unit)
     elif node.op == "div":
         if len(children) != 2:
             _type_error("div 需要两个参数")
         unit = children[0].unit.multiply(children[1].unit, sign=-1)
-    elif node.op == "rolling_corr":
+    elif node.op == "rolling_salience_value":
+        if len(children) != 2 or any(child.unit != _Unit.base("dimensionless") for child in children):
+            _type_error("rolling_salience_value 需要两个小数制收益参数，固定theta不适用于价格单位")
+        unit = _Unit.base("dimensionless")
+    elif node.op == "rolling_negative_semibeta":
         if len(children) != 2:
-            _type_error("rolling_corr 需要两个参数")
+            _type_error("rolling_negative_semibeta 需要两个参数")
+        unit = children[0].unit.multiply(children[1].unit, sign=-1)
+    elif node.op == "rolling_lower_tail_overlap":
+        if len(children) != 2:
+            _type_error("rolling_lower_tail_overlap 需要两个参数")
+        unit = _Unit.base("dimensionless")
+    elif node.op == "rolling_explained_increment":
+        if len(children) not in {3, 4, 5, 6}:
+            _type_error("rolling_explained_increment 需要被解释变量、基准解释变量及一到四个新增解释变量")
+        unit = _Unit.base("dimensionless")
+    elif node.op in {"rolling_residual_std", "rolling_residual_last"}:
+        if len(children) != 2:
+            _type_error(f"{node.op} 需要两个参数")
+        unit = children[0].unit
+    elif node.op == "rolling_partial_beta":
+        if len(children) not in {3, 4}:
+            _type_error("rolling_partial_beta 需要三个或四个参数")
+        unit = children[0].unit.multiply(children[1].unit, sign=-1)
+    elif node.op in {"rolling_corr", "rolling_partial_corr", "sign", "rolling_skew", "rolling_argmax", "rolling_time_corr", "rolling_drawdown_recovery"}:
+        arity = {"rolling_corr": 2, "rolling_partial_corr": 3, "sign": 1, "rolling_skew": 1, "rolling_argmax": 1, "rolling_time_corr": 1, "rolling_drawdown_recovery": 1}[node.op]
+        if len(children) != arity:
+            _type_error(f"{node.op} 需要 {arity} 个参数")
         unit = _Unit.base("dimensionless")
     elif node.op in {
         "neg",
         "abs",
         "delay",
+        "calendar_delay",
+        "calendar_month_delay",
+        "calendar_delta",
         "delta",
         "rolling_sum",
         "rolling_mean",
+        "rolling_lower_tail_mean",
         "rolling_std",
         "rolling_min",
         "rolling_max",

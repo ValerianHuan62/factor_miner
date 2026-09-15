@@ -30,12 +30,21 @@ MASK_COLUMNS: tuple[str, ...] = (
     "valid_for_factor_rank",
     "valid_for_trading",
 )
-LABEL_COLUMNS: tuple[str, ...] = ("label_o2o_5d",)
+EXECUTION_STATE_COLUMNS: tuple[str, ...] = (
+    "can_open_long",
+    "can_close_long",
+)
+LABEL_EVENT_COLUMNS: tuple[str, ...] = (
+    "label_entry_date",
+    "label_exit_date",
+)
+LABEL_COLUMNS: tuple[str, ...] = ("label_o2o_5d", *LABEL_EVENT_COLUMNS)
 CANONICAL_COLUMNS: tuple[str, ...] = (
     *IDENTITY_COLUMNS,
     *MARKET_COLUMNS,
     *STATE_BASE_COLUMNS,
     *MASK_COLUMNS,
+    *EXECUTION_STATE_COLUMNS,
     *LABEL_COLUMNS,
 )
 

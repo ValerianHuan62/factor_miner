@@ -1,0 +1,6 @@
+interface:
+  display_name: "因子收益归因与策略诊断"
+  short_description: "分析既有因子的收益来源、风格暴露、模型组合、交易成本与新验证资格"
+  default_prompt: "使用 $factor-attribution 对当前已冻结因子及组合执行收益归因、模型和成本诊断，并核查是否存在可信的新样本外验证。"
+policy:
+  allow_implicit_invocation: true

@@ -16,7 +16,7 @@ from tests.test_coverage_snapshot import _nodes
 class CoverageDailyICTest(unittest.TestCase):
     """标签属于 outcome 层，IC 逐因子逐日计算。"""
 
-    def test_o2o_label_uses_each_asset_future_open_one_to_six(self) -> None:
+    def test_o2o_label_uses_global_future_open_one_to_six(self) -> None:
         dates = [date(2026, 1, day) for day in range(2, 10)]
         bars = pl.DataFrame(
             {
@@ -38,6 +38,8 @@ class CoverageDailyICTest(unittest.TestCase):
         ).item(0, "label_o2o_5d")
         self.assertAlmostEqual(first_a, 16.0 / 11.0 - 1.0)
         self.assertAlmostEqual(first_b, 32.0 / 22.0 - 1.0)
+        self.assertEqual(labels.item(0, "label_entry_date"), dates[1])
+        self.assertEqual(labels.item(0, "label_exit_date"), dates[6])
         self.assertEqual(
             labels.filter(pl.col("label_o2o_5d").is_not_null()).height,
             4,

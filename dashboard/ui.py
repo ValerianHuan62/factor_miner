@@ -8,11 +8,11 @@ from typing import Any, Iterable
 from factor_miner.dashboard_projection import candidate_reference_id
 
 
-PRIMARY = "#1d1d1f"
-ACCENT = "#0071e3"
-POSITIVE = "#34c759"
-MUTED = "#6e6e73"
-GRID = "#d2d2d7"
+PRIMARY = "#e8f0e9"
+ACCENT = "#c7f36b"
+POSITIVE = "#70d7c4"
+MUTED = "#91a096"
+GRID = "#2b3931"
 
 
 def apply_theme(st: Any, *, page_title: str) -> None:
@@ -22,37 +22,150 @@ def apply_theme(st: Any, *, page_title: str) -> None:
     st.markdown(
         """
         <style>
-        :root { --ink:#1d1d1f; --muted:#6e6e73; --paper:#f5f5f7; --line:#d2d2d7;
-                --blue:#0071e3; --green:#34c759; --orange:#ff9f0a; }
-        .stApp { background: var(--paper); color: var(--ink); }
-        [data-testid="stHeader"] { background: rgba(245,245,247,.78); backdrop-filter: blur(18px); }
-        [data-testid="stSidebar"] { background:rgba(245,245,247,.76); border-right:1px solid rgba(210,210,215,.65); }
-        [data-testid="stSidebar"] * { color:#1d1d1f !important; }
+        :root { --ink:#e8f0e9; --muted:#91a096; --paper:#0d1210; --panel:#151c18;
+                --panel-2:#111814; --line:#2b3931; --lime:#c7f36b; --cyan:#70d7c4;
+                --orange:#ff9f68; --danger:#ff8e72; }
+        .stApp { color:var(--ink); background-color:var(--paper);
+          background-image:linear-gradient(rgba(199,243,107,.025) 1px,transparent 1px),
+                           linear-gradient(90deg,rgba(199,243,107,.025) 1px,transparent 1px),
+                           radial-gradient(circle at 82% -10%,rgba(112,215,196,.10),transparent 34%);
+          background-size:32px 32px,32px 32px,100% 100%; }
+        [data-testid="stHeader"] { background:rgba(13,18,16,.86); backdrop-filter:blur(16px); }
+        [data-testid="stSidebar"] { background:#101613; border-right:1px solid var(--line); }
+        [data-testid="stSidebar"] * { color:var(--ink)!important; }
         [data-testid="stSidebarNav"] span { font-weight:600; letter-spacing:-.01em; }
-        h1, h2, h3 { color:var(--ink); letter-spacing:-.035em; font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display','Helvetica Neue',sans-serif; }
+        h1,h2,h3,h4 { color:var(--ink); letter-spacing:-.035em;
+          font-family:'Iowan Old Style','Songti SC','STSong',serif; }
+        [data-testid="stMarkdownContainer"] p,
+        [data-testid="stMarkdownContainer"] li { color:var(--ink); }
         h1 { font-size:2.55rem; font-weight:700; }
         h2 { font-size:1.35rem; margin-top:1.2rem; }
         h3 { font-size:1.05rem; }
-        .hero { background:linear-gradient(145deg,#ffffff 0%,#f7f7fa 60%,#e9f2ff 100%);
-                border:1px solid rgba(210,210,215,.7); border-radius:28px; padding:38px 42px 34px; color:var(--ink); margin:4px 0 24px;
-                box-shadow:0 18px 45px rgba(0,0,0,.055); position:relative; overflow:hidden; }
+        .hero { background:linear-gradient(135deg,#172019,#0f1713 72%);
+                border:1px solid var(--line); border-radius:3px; padding:38px 42px 34px;
+                color:var(--ink); margin:4px 0 24px; box-shadow:12px 12px 0 rgba(199,243,107,.055);
+                position:relative; overflow:hidden; }
         .hero:after { content:''; position:absolute; width:330px; height:330px; right:-120px; top:-175px;
-                      border:1px solid rgba(0,113,227,.18); border-radius:50%; box-shadow:0 0 0 34px rgba(0,113,227,.045),0 0 0 70px rgba(0,113,227,.028); }
-        .hero-kicker { color:var(--blue); font-size:.72rem; text-transform:uppercase; letter-spacing:.14em; font-weight:700; }
-        .hero-title { font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display','Helvetica Neue',sans-serif; font-size:3rem; font-weight:700; letter-spacing:-.055em; line-height:1.05; margin:13px 0 10px; }
-        .hero-copy { color:#424245; max-width:780px; font-size:1.02rem; line-height:1.55; }
+                      border:1px solid rgba(199,243,107,.18); border-radius:50%;
+                      box-shadow:0 0 0 34px rgba(199,243,107,.035),0 0 0 70px rgba(112,215,196,.022); }
+        .hero-kicker { color:var(--lime); font:700 .72rem 'SFMono-Regular','Menlo',monospace;
+                       text-transform:uppercase; letter-spacing:.14em; }
+        .hero-title { color:var(--ink); font:700 3rem/1.05 'Iowan Old Style','Songti SC','STSong',serif;
+                      letter-spacing:-.055em; margin:13px 0 10px; }
+        .hero-copy { color:var(--muted); max-width:780px; font-size:1.02rem; line-height:1.55; }
         .hero-meta { color:var(--muted); font-size:.82rem; margin-top:20px; }
-        .section-kicker { color:var(--blue); font-size:.7rem; text-transform:uppercase; letter-spacing:.13em; font-weight:700; margin:26px 0 6px; }
-        .metric-card { background:rgba(255,255,255,.84); border:1px solid rgba(210,210,215,.82); border-radius:20px; padding:18px 20px; min-height:105px; box-shadow:0 8px 22px rgba(0,0,0,.038); }
+        .section-kicker { color:var(--lime); font:700 .7rem 'SFMono-Regular','Menlo',monospace;
+                          text-transform:uppercase; letter-spacing:.13em; margin:26px 0 6px; }
+        .metric-card { background:rgba(21,28,24,.94); border:1px solid var(--line); border-radius:3px;
+                       padding:18px 20px; min-height:105px; box-shadow:none; }
         .metric-label { color:var(--muted); font-size:.78rem; font-weight:700; letter-spacing:.03em; }
-        .metric-value { color:var(--ink); font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display','Helvetica Neue',sans-serif; font-size:1.7rem; margin-top:8px; font-weight:700; letter-spacing:-.035em; }
+        .metric-value { color:var(--lime); font:700 1.7rem 'SFMono-Regular','Menlo',monospace;
+                        margin-top:8px; letter-spacing:-.035em; }
         .metric-note { color:var(--muted); font-size:.75rem; margin-top:4px; }
-        .callout { border-left:4px solid var(--orange); background:#fff4df; color:#7a4d00; padding:13px 16px; border-radius:0 14px 14px 0; margin:12px 0; }
-        .callout-ok { border-left-color:var(--green); background:#eaf8ee; color:#17652d; }
+        .callout { border-left:4px solid var(--orange); background:#211b16; color:#ffd7b8;
+                   padding:13px 16px; border-radius:0 3px 3px 0; margin:12px 0; }
+        .callout-ok { border-left-color:var(--cyan); background:#10221d; color:#b9f3e7; }
         .small-note { color:var(--muted); font-size:.8rem; }
-        [data-testid="stDataFrame"] { border:1px solid var(--line); border-radius:12px; overflow:hidden; }
-        button[kind="primary"] { background:var(--blue); border-color:var(--blue); border-radius:999px; }
+        [data-testid="stDataFrame"] { border:1px solid var(--line); border-radius:2px; overflow:hidden; }
+        [data-testid="stMetric"] { background:var(--panel); border:1px solid var(--line); border-radius:3px; padding:12px; container-type:inline-size; }
+        [data-testid="stMetric"] label { color:var(--muted)!important; }
+        [data-testid="stMetricValue"] { color:var(--lime)!important; font-family:'SFMono-Regular','Menlo',monospace;
+            font-size:clamp(.85rem,14cqw,1.5rem)!important; font-variant-numeric:tabular-nums; }
+        [data-testid="stAlert"] { background:var(--panel)!important; border:1px solid var(--line); color:var(--ink)!important; }
+        [data-testid="stAlert"] * { color:var(--ink)!important; }
+        [data-baseweb="select"] > div,[data-baseweb="input"] > div,
+        [data-testid="stDateInput"] > div > div { background:var(--panel)!important; border-color:var(--line)!important; color:var(--ink)!important; }
+        input,textarea { color:var(--ink)!important; caret-color:var(--lime)!important; }
+        [data-baseweb="popover"],[role="listbox"] { background:var(--panel)!important; color:var(--ink)!important; }
+        [data-baseweb="tab-list"] { border-bottom:1px solid var(--line); }
+        [data-baseweb="tab"] { color:var(--muted)!important; }
+        [aria-selected="true"][data-baseweb="tab"] { color:var(--lime)!important; }
+        button[kind="primary"] { background:var(--lime); color:#111710; border-color:var(--lime); border-radius:3px; }
+        button[kind="secondary"] { background:var(--panel); color:var(--ink); border-color:var(--line); }
+        .research-hero { background:linear-gradient(135deg,#172019,#0f1713 72%); border:1px solid var(--line);
+                         border-radius:3px; padding:30px 34px; box-shadow:12px 12px 0 rgba(199,243,107,.055); margin-bottom:20px; }
+        .research-kicker { color:var(--lime); font-size:.72rem; font-weight:700;
+                           letter-spacing:.14em; text-transform:uppercase; }
+        .research-title { color:var(--ink); font-size:2.35rem; font-weight:700;
+                          letter-spacing:-.045em; margin:10px 0; }
+        .research-copy { color:var(--muted); max-width:880px; line-height:1.65; }
+        .status-pill { display:inline-flex; gap:7px; align-items:center; padding:7px 11px;
+                       border-radius:999px; border:1px solid var(--line); background:var(--panel);
+                       color:var(--ink); margin:4px 6px 4px 0; font-size:.78rem; }
+        .status-dot { width:7px; height:7px; border-radius:50%; background:var(--muted); }
+        .status-dot.online { background:var(--cyan); }
+        .hypothesis-detail { background:var(--panel); border:1px solid var(--line);
+                             border-radius:3px; padding:20px 22px; margin:8px 0 14px; }
+        .hypothesis-detail h4 { color:var(--lime); margin:.2rem 0 .55rem; font-size:.82rem;
+                                text-transform:uppercase; letter-spacing:.08em; }
+        .stApp { background-image:none; }
+        .block-container { max-width:1400px; padding-top:2rem; }
+        .hero { padding:22px 26px; box-shadow:none; }
+        .hero:after { display:none; }
+        .hero-title { font-size:2rem; }
+        .research-hero { box-shadow:none; padding:20px; }
+        [data-testid="stTextArea"] textarea { background:var(--panel)!important; }
+        [data-testid="stWidgetLabel"] p, [data-testid="stSelectbox"] { color:var(--ink); }
+        button[kind="primary"] p { color:#111710!important; }
+        @media (max-width:700px) { .block-container { padding:1rem; } }
         </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def apply_factor_atlas_theme(st: Any) -> None:
+    """为因子探索页叠加纸质研究图鉴风格。"""
+
+    st.markdown(
+        """
+        <style>
+        :root { --atlas-paper:#eee9dd; --atlas-card:#fffdf7; --atlas-ink:#17211d;
+                --atlas-muted:#687169; --atlas-line:#cfc8b8; --atlas-red:#b63b2e;
+                --atlas-green:#1e6753; }
+        .stApp {
+          background-color:var(--atlas-paper);
+          background-image:linear-gradient(rgba(23,33,29,.035) 1px,transparent 1px),
+                           linear-gradient(90deg,rgba(23,33,29,.035) 1px,transparent 1px);
+          background-size:24px 24px;
+          color:var(--atlas-ink);
+        }
+        [data-testid="stHeader"] { background:rgba(238,233,221,.84); backdrop-filter:blur(16px); }
+        [data-testid="stSidebar"] { background:#e4ded0; border-right:1px solid var(--atlas-line); }
+        [data-testid="stSidebar"] * { color:var(--atlas-ink)!important; }
+        h1,h2,h3 { font-family:'Iowan Old Style','Songti SC','STSong',serif; color:var(--atlas-ink); }
+        .atlas-hero { background:var(--atlas-card); border:1px solid var(--atlas-line);
+                      border-radius:4px 24px 4px 24px; padding:34px 38px; margin:4px 0 22px;
+                      box-shadow:9px 9px 0 rgba(23,33,29,.08); position:relative; overflow:hidden; }
+        .atlas-hero:before { content:'FACTOR / ATLAS'; position:absolute; right:-20px; top:24px;
+                             transform:rotate(8deg); color:rgba(182,59,46,.12); font:700 3.8rem 'Iowan Old Style',serif; }
+        .atlas-kicker { color:var(--atlas-red); font-size:.72rem; letter-spacing:.18em; font-weight:800; }
+        .atlas-title { font:700 3.15rem/1.05 'Iowan Old Style','Songti SC','STSong',serif;
+                       letter-spacing:-.045em; margin:12px 0 10px; max-width:760px; }
+        .atlas-copy { color:#465049; max-width:820px; line-height:1.68; }
+        .atlas-rule { width:64px; height:4px; background:var(--atlas-red); margin-top:20px; }
+        .metric-card { border-radius:4px 16px 4px 16px; background:rgba(255,253,247,.92);
+                       border-color:var(--atlas-line); box-shadow:5px 5px 0 rgba(23,33,29,.06); }
+        .section-kicker { color:var(--atlas-red); }
+        [data-testid="stDataFrame"] { border-color:var(--atlas-line); background:var(--atlas-card); }
+        code { color:var(--atlas-green)!important; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def factor_atlas_hero(st: Any, *, factor_count: int) -> None:
+    """渲染因子图鉴入口，明确聚合指标的研究边界。"""
+
+    st.markdown(
+        f"""
+        <section class="atlas-hero">
+          <div class="atlas-kicker">RESEARCH CATALOG / READ-ONLY</div>
+          <div class="atlas-title">因子不是奖杯，是待复核的研究标本。</div>
+          <div class="atlas-copy">搜索公式与金融假设，按方向和统计证据筛选，再把候选并排比较。这里展示 {factor_count} 个已投影候选的聚合指标；筛选、排序和下载都不会重算结果，也不会改变候选状态。</div>
+          <div class="atlas-rule"></div>
+        </section>
         """,
         unsafe_allow_html=True,
     )
@@ -100,6 +213,44 @@ def apply_research_cockpit_theme(st: Any) -> None:
     )
 
 
+def apply_backtest_lab_theme(st: Any) -> None:
+    """为交互回测页叠加工业化行情终端风格。"""
+
+    st.markdown(
+        """
+        <style>
+        :root { --lab-bg:#0d1210; --lab-panel:#151c18; --lab-line:#2b3931;
+                --lab-text:#e8f0e9; --lab-muted:#91a096; --lab-lime:#c7f36b;
+                --lab-cyan:#70d7c4; }
+        .stApp { background-color:var(--lab-bg); color:var(--lab-text);
+          background-image:linear-gradient(rgba(199,243,107,.025) 1px,transparent 1px),
+                           linear-gradient(90deg,rgba(199,243,107,.025) 1px,transparent 1px);
+          background-size:32px 32px; }
+        [data-testid="stHeader"] { background:rgba(13,18,16,.86); backdrop-filter:blur(14px); }
+        [data-testid="stSidebar"] { background:#101613; border-right:1px solid var(--lab-line); }
+        [data-testid="stSidebar"] * { color:var(--lab-text)!important; }
+        h1,h2,h3,h4,p,label,[data-testid="stMarkdownContainer"] { color:var(--lab-text); }
+        .hero { background:linear-gradient(135deg,#172019,#0f1713 72%); color:var(--lab-text);
+          border:1px solid var(--lab-line); border-radius:3px;
+          box-shadow:12px 12px 0 rgba(199,243,107,.055); }
+        .hero:after { border-color:rgba(199,243,107,.18);
+          box-shadow:0 0 0 34px rgba(199,243,107,.035),0 0 0 70px rgba(112,215,196,.022); }
+        .hero-kicker,.section-kicker { color:var(--lab-lime); font-family:'SFMono-Regular','Menlo',monospace; }
+        .hero-title { color:var(--lab-text); font-family:'Iowan Old Style','Songti SC',serif; }
+        .hero-copy,.hero-meta { color:var(--lab-muted); }
+        .metric-card,[data-testid="stMetric"] { background:rgba(21,28,24,.94);
+          border:1px solid var(--lab-line); border-radius:3px; box-shadow:none; }
+        .metric-label,.metric-note { color:var(--lab-muted); }
+        .metric-value { color:var(--lab-lime); font-family:'SFMono-Regular','Menlo',monospace; }
+        [data-testid="stDataFrame"] { border:1px solid var(--lab-line); border-radius:2px; }
+        [data-baseweb="tab-list"] { border-bottom:1px solid var(--lab-line); }
+        button[kind="primary"] { background:var(--lab-lime); color:#111710; border-color:var(--lab-lime); }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def research_status_header(
     st: Any,
     *,
@@ -109,21 +260,9 @@ def research_status_header(
 ) -> None:
     """渲染运行台顶部状态，避免把阶段状态误作研究结论。"""
 
-    st.markdown(
-        f"""
-        <section class="research-hero">
-          <div class="research-kicker">AUTONOMOUS RESEARCH / CONTROL DESK</div>
-          <div class="research-title">自主因子研究运行台</div>
-          <div class="research-copy">先完整审批十条事前假设，再冻结候选族并进入统一的可见评价。所有候选共用同一套回测协议；机制验证方案尚未执行，也不参与候选通过判定。开发区间通过不代表有效 Alpha 或可实盘。</div>
-          <div style="margin-top:16px">
-            <span class="status-pill">批次 {run_id}</span>
-            <span class="status-pill">阶段 {stage_label}</span>
-            <span class="status-pill">审批 {decision_count}/10</span>
-          </div>
-        </section>
-        """,
-        unsafe_allow_html=True,
-    )
+    st.subheader(stage_label)
+    if decision_count:
+        st.caption(f"已审阅 {decision_count}/10 条假设")
 
 
 def hero(st: Any, *, kicker: str, title: str, copy: str, meta: str = "") -> None:
@@ -163,6 +302,22 @@ def metric_card(st: Any, label: str, value: str, note: str = "") -> None:
         """,
         unsafe_allow_html=True,
     )
+
+
+def render_no_published_run(st: Any, *, lens: str) -> None:
+    """在市场尚无正式运行时保持页面可访问，并明确证据边界。"""
+
+    hero(
+        st,
+        kicker=f"{lens} / WAITING FOR LOCAL RUN",
+        title="当前市场还没有可展示的研究运行",
+        copy=(
+            "行情与状态表可以先在市场模块完成只读预检；IC、回测、归因和审计必须等待该市场完成标准面板发布与一次冻结研究。"
+            "这里不会用另一市场结果代替，也不会把缺失指标填成零。"
+        ),
+        meta="数据配置是可选入口 · 研究产物按市场隔离 · PostgreSQL 仍是可重建读模型",
+    )
+    st.info("请先打开侧栏的 A 股或美股模块检查数据合同；生成正式运行后，本页会自动读取最新发布产物。")
 
 
 def pct(value: Any, digits: int = 2) -> str:
@@ -403,14 +558,14 @@ def _style_figure(figure: Any, x_title: str, y_title: str) -> Any:
     """统一 Plotly 图表的研究报告样式。"""
 
     figure.update_layout(
-        template="simple_white",
+        template="plotly_dark",
         height=350,
         margin={"l": 12, "r": 12, "t": 24, "b": 12},
-        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="#fffdfa",
-        font={"family": "Avenir Next, Noto Sans SC, sans-serif", "color": PRIMARY, "size": 12},
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="#111814",
+        font={"family": "SFMono-Regular, Menlo, monospace", "color": PRIMARY, "size": 12},
         legend={"orientation": "h", "y": 1.08, "x": 0},
         hovermode="x unified",
     )
     figure.update_xaxes(title=x_title, showgrid=False, linecolor=GRID, tickangle=-30)
-    figure.update_yaxes(title=y_title, gridcolor="#e7ecec", zerolinecolor=GRID)
+    figure.update_yaxes(title=y_title, gridcolor="#26342c", zerolinecolor=GRID)
     return figure

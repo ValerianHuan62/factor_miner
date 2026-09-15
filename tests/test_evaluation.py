@@ -192,6 +192,26 @@ class EvaluationTest(unittest.TestCase):
         self.assertEqual(by_date[date(2020, 1, 3)].factor_coverage, 1.0)
         self.assertEqual(by_date[date(2020, 1, 3)].label_coverage, 0.75)
 
+    def test_event_purge_removes_labels_crossing_next_split(self) -> None:
+        """训练/发现样本的退出事件必须严格早于下一分区。"""
+
+        frame = rank_panel().with_columns(
+            pl.when(pl.col("date") <= date(2020, 1, 2))
+            .then(pl.lit(date(2020, 1, 4)))
+            .otherwise(pl.lit(date(2020, 1, 5)))
+            .alias("label_exit_date")
+        )
+        campaign = visible_campaign(min_valid_dates=1).model_copy(
+            update={
+                "visible_end": date(2020, 1, 4),
+                "next_split_start": date(2020, 1, 5),
+            }
+        )
+        result = evaluate_rank_ic(frame, campaign)
+        self.assertEqual(result.total_dates, 2)
+        self.assertEqual(result.event_purge_removed_rows, 8)
+        self.assertEqual(result.event_purge_removed_signal_dates, 2)
+
 
 if __name__ == "__main__":
     unittest.main()

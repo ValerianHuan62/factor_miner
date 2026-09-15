@@ -529,7 +529,7 @@ def _read_state_candidate_definitions(
         try:
             registered = (
                 RegisteredTrustedCandidate.model_validate(payload)
-                if payload.get("spec", {}).get("spec_version") == "2"
+                if payload.get("spec", {}).get("spec_version") in {"2", "3"}
                 else RegisteredCandidate.model_validate(payload)
             )
         except (AttributeError, ValueError) as error:

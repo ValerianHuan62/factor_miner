@@ -11,6 +11,7 @@ from scipy.stats import spearmanr
 from factor_miner.coverage_schema import CoverageFactorNode
 from factor_miner.coverage_signal import DailyICIdentity
 from factor_miner.errors import FactorMinerError, FailureCode
+from factor_miner.label_dataset import build_fixed_session_o2o_labels
 
 
 def build_visible_o2o_5d_labels(adjusted_bars: pl.DataFrame) -> pl.DataFrame:
@@ -28,23 +29,8 @@ def build_visible_o2o_5d_labels(adjusted_bars: pl.DataFrame) -> pl.DataFrame:
             f"可见标签行情合同非法，缺列：{sorted(missing)}",
         )
     _reject_duplicate_keys(adjusted_bars, "可见标签行情")
-    ordered = adjusted_bars.sort(["asset", "date"])
-    return (
-        ordered.with_columns(
-            (
-                pl.col("adj_open").shift(-6).over("asset")
-                / pl.col("adj_open").shift(-1).over("asset")
-                - 1.0
-            ).alias("label_o2o_5d")
-        )
-        .with_columns(
-            pl.when(pl.col("label_o2o_5d").is_finite())
-            .then(pl.col("label_o2o_5d"))
-            .otherwise(None)
-            .alias("label_o2o_5d")
-        )
-        .select(["date", "asset", "label_o2o_5d"])
-        .sort(["date", "asset"])
+    return build_fixed_session_o2o_labels(
+        adjusted_bars.select("date", "asset", pl.col("adj_open").alias("open"))
     )
 
 
